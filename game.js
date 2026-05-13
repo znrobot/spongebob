@@ -21,8 +21,6 @@ let touchCatchHeld = false;
 let animationId = 0;
 let lastTime = 0;
 let state = null;
-const SEAWEED_HEIGHT = 78;
-const SEAWEED_SAFE_SECONDS = 5;
 
 const characters = {
   spongebob: {
@@ -66,8 +64,6 @@ function createPlayer(base, controlledByHuman, initialHp) {
     invincible: 0,
     catchCooldown: 0,
     catchBonusCooldown: 0,
-    inSeaweed: false,
-    seaweedSafeTime: 0,
     controlledByHuman,
     caughtFlash: 0,
     bonusFlash: 0,
@@ -229,29 +225,6 @@ function movePlayer(player, dt) {
   }
   player.x = clamp(player.x + player.vx * dt, player.radius, canvas.width - player.radius);
   player.y = clamp(player.y + player.vy * dt, player.radius + 18, canvas.height - player.radius);
-}
-
-function isInSeaweed(player) {
-  return player.y + player.radius * 0.5 >= canvas.height - SEAWEED_HEIGHT;
-}
-
-function updateSeaweedProtection(player, dt) {
-  const nowInSeaweed = isInSeaweed(player);
-  if (nowInSeaweed && !player.inSeaweed) {
-    player.seaweedSafeTime = SEAWEED_SAFE_SECONDS;
-  }
-  if (!nowInSeaweed) {
-    player.seaweedSafeTime = 0;
-  }
-
-  player.inSeaweed = nowInSeaweed;
-  if (player.inSeaweed && player.seaweedSafeTime > 0) {
-    player.seaweedSafeTime = Math.max(0, player.seaweedSafeTime - dt);
-  }
-}
-
-function hasSeaweedProtection(player) {
-  return player.inSeaweed && player.seaweedSafeTime > 0;
 }
 
 function tryCatch(player) {
@@ -482,11 +455,6 @@ function updateBullets(dt) {
 
     for (const player of state.players) {
       if (player.hp > 0 && player.invincible <= 0 && distance(player, bullet) < player.radius + bullet.radius) {
-        if (hasSeaweedProtection(player)) {
-          bullet.life = 0;
-          player.caughtFlash = 0.16;
-          continue;
-        }
         player.hp = Math.max(0, player.hp - (bullet.power || 1));
         player.invincible = 1.1;
         bullet.life = 0;
@@ -514,7 +482,6 @@ function update(dt) {
     player.bonusFlash = Math.max(0, player.bonusFlash - dt);
     if (player.controlledByHuman) handleHuman(player, dt);
     else handleAi(player, dt);
-    updateSeaweedProtection(player, dt);
   }
 
   updateJellyfish(dt);
@@ -575,26 +542,6 @@ function drawBackground() {
     ctx.beginPath();
     ctx.arc(x, canvas.height - 16, 12, 0, Math.PI * 2);
     ctx.fill();
-  }
-
-  drawSeaweed();
-}
-
-function drawSeaweed() {
-  const baseY = canvas.height - SEAWEED_HEIGHT;
-  const now = performance.now() * 0.003;
-  ctx.fillStyle = "rgba(32, 137, 86, 0.24)";
-  ctx.fillRect(0, baseY, canvas.width, SEAWEED_HEIGHT);
-
-  for (let x = -8; x < canvas.width + 16; x += 18) {
-    const height = 44 + ((x * 13) % 28);
-    const sway = Math.sin(now + x * 0.05) * 7;
-    ctx.strokeStyle = x % 36 === 0 ? "rgba(31, 122, 72, 0.88)" : "rgba(45, 156, 94, 0.8)";
-    ctx.lineWidth = x % 36 === 0 ? 5 : 3;
-    ctx.beginPath();
-    ctx.moveTo(x, canvas.height - 24);
-    ctx.quadraticCurveTo(x + sway, canvas.height - height * 0.55, x + sway * 0.4, canvas.height - height);
-    ctx.stroke();
   }
 }
 
@@ -718,18 +665,6 @@ function drawPlayer(player) {
     ctx.textAlign = "center";
     ctx.strokeText("+10", 0, -54);
     ctx.fillText("+10", 0, -54);
-  }
-
-  if (player.inSeaweed) {
-    const active = hasSeaweedProtection(player);
-    ctx.fillStyle = active ? "#ffffff" : "#ffe0df";
-    ctx.strokeStyle = active ? "#176f45" : "#9c2e2a";
-    ctx.lineWidth = 3;
-    ctx.font = "800 16px Microsoft YaHei, Arial";
-    ctx.textAlign = "center";
-    const label = active ? `草 ${Math.ceil(player.seaweedSafeTime)}` : "草 0";
-    ctx.strokeText(label, 0, -72);
-    ctx.fillText(label, 0, -72);
   }
 
   ctx.restore();
