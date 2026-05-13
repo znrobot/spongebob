@@ -22,6 +22,18 @@
 
         <div class="controls" aria-label="游戏设置">
           <fieldset class="control-group">
+            <legend>游戏模式</legend>
+            <label class="choice">
+              <input type="radio" name="gameMode" value="single" checked />
+              单人
+            </label>
+            <label class="choice">
+              <input type="radio" name="gameMode" value="double" />
+              双人联机
+            </label>
+          </fieldset>
+
+          <fieldset class="control-group">
             <legend>选择角色</legend>
             <label class="choice">
               <input type="radio" name="player" value="spongebob" checked />
@@ -62,6 +74,19 @@
           </label>
         </div>
 
+        <div id="multiplayerPanel" class="multiplayer-panel" hidden>
+          <div class="room-actions">
+            <button id="createRoomButton" class="secondary-button" type="button">创建房间</button>
+            <label class="room-code">
+              <span>房间码</span>
+              <input id="roomCodeInput" type="text" maxlength="24" autocomplete="off" placeholder="输入房间码" />
+            </label>
+            <button id="joinRoomButton" class="secondary-button" type="button">加入房间</button>
+            <button id="readyButton" class="secondary-button" type="button" disabled>我准备好了</button>
+          </div>
+          <p id="networkStatus" class="network-status">双人联机需要两台设备打开此网页：一人创建房间，另一人输入房间码加入。</p>
+        </div>
+
         <div class="scoreboard" aria-live="polite">
           <article>
             <span class="name">海绵宝宝</span>
@@ -94,6 +119,7 @@
       </section>
     </main>
 
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <script src="game.js"></script>
   </body>
 </html>

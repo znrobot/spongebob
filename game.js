@@ -14,6 +14,12 @@ const patrickHp = document.getElementById("patrickHp");
 const timerText = document.getElementById("timer");
 const statusText = document.getElementById("statusText");
 const touchCatchButton = document.getElementById("touchCatchButton");
+const multiplayerPanel = document.getElementById("multiplayerPanel");
+const createRoomButton = document.getElementById("createRoomButton");
+const joinRoomButton = document.getElementById("joinRoomButton");
+const readyButton = document.getElementById("readyButton");
+const roomCodeInput = document.getElementById("roomCodeInput");
+const networkStatus = document.getElementById("networkStatus");
 
 const keys = new Set();
 const touchMoves = new Set();
@@ -21,8 +27,20 @@ let touchCatchHeld = false;
 let animationId = 0;
 let lastTime = 0;
 let state = null;
+let lastNetworkSync = 0;
 const SEAWEED_HEIGHT = 78;
 const SEAWEED_SAFE_SECONDS = 5;
+
+const multiplayer = {
+  mode: "single",
+  peer: null,
+  conn: null,
+  role: null,
+  localReady: false,
+  remoteReady: false,
+  remoteInput: { left: false, right: false, up: false, down: false, catch: false },
+  roomId: "",
+};
 
 const characters = {
   spongebob: {
@@ -69,9 +87,26 @@ function createPlayer(base, controlledByHuman, initialHp) {
     inSeaweed: false,
     seaweedSafeTime: 0,
     controlledByHuman,
+    remoteControlled: false,
     caughtFlash: 0,
     bonusFlash: 0,
   };
+}
+
+function isDoubleMode() {
+  return document.querySelector("input[name='gameMode']:checked")?.value === "double";
+}
+
+function isNetworkHost() {
+  return multiplayer.mode === "double" && multiplayer.role === "host";
+}
+
+function isNetworkGuest() {
+  return multiplayer.mode === "double" && multiplayer.role === "guest";
+}
+
+function canSimulateGame() {
+  return multiplayer.mode !== "double" || isNetworkHost();
 }
 
 function spawnJellyfish() {
@@ -107,6 +142,12 @@ function spawnGiantJellyfish(options = {}) {
 }
 
 function resetGame() {
+  multiplayer.mode = isDoubleMode() ? "double" : "single";
+  if (multiplayer.mode === "double" && !isNetworkHost()) {
+    statusText.textContent = "双人联机由房主开始游戏，请等待房主同步画面";
+    return;
+  }
+
   const selected = document.querySelector("input[name='player']:checked").value;
   const duration = clamp(Number(durationInput.value) || 60, 20, 300);
   const initialHp = clamp(Number(initialHpInput.value) || 10, 1, 99);
@@ -114,12 +155,15 @@ function resetGame() {
   initialHpInput.value = initialHp;
 
   const bossModeEnabled = bossModeInput.checked;
+  const spongePlayer = createPlayer(characters.spongebob, multiplayer.mode === "double" || selected === "spongebob", initialHp);
+  const patrickPlayer = createPlayer(characters.patrick, selected === "patrick" && multiplayer.mode !== "double", initialHp);
+  if (multiplayer.mode === "double") {
+    patrickPlayer.remoteControlled = true;
+  }
+
   state = {
     playerChoice: selected,
-    players: [
-      createPlayer(characters.spongebob, selected === "spongebob", initialHp),
-      createPlayer(characters.patrick, selected === "patrick", initialHp),
-    ],
+    players: [spongePlayer, patrickPlayer],
     jellyfish: Array.from({ length: 7 }, spawnJellyfish),
     bullets: [],
     remaining: duration,
@@ -142,6 +186,8 @@ function resetGame() {
   lastTime = performance.now();
   cancelAnimationFrame(animationId);
   animationId = requestAnimationFrame(loop);
+  sendNetworkMessage({ type: "start" });
+  sendSnapshot(true);
 }
 
 function buildStartHint() {
@@ -175,6 +221,42 @@ function handleHuman(player, dt) {
   }
 
   movePlayer(player, dt);
+}
+
+function handleRemotePlayer(player, dt) {
+  if (player.hp <= 0) return;
+
+  let dx = 0;
+  let dy = 0;
+  if (multiplayer.remoteInput.left) dx -= 1;
+  if (multiplayer.remoteInput.right) dx += 1;
+  if (multiplayer.remoteInput.up) dy -= 1;
+  if (multiplayer.remoteInput.down) dy += 1;
+
+  const length = Math.hypot(dx, dy) || 1;
+  player.vx = (dx / length) * 220;
+  player.vy = (dy / length) * 220;
+
+  if (multiplayer.remoteInput.catch && player.catchCooldown <= 0) {
+    tryCatch(player);
+  }
+
+  movePlayer(player, dt);
+}
+
+function getLocalInput() {
+  return {
+    left: keys.has("ArrowLeft") || keys.has("a") || touchMoves.has("left"),
+    right: keys.has("ArrowRight") || keys.has("d") || touchMoves.has("right"),
+    up: keys.has("ArrowUp") || keys.has("w") || touchMoves.has("up"),
+    down: keys.has("ArrowDown") || keys.has("s") || touchMoves.has("down"),
+    catch: keys.has(" ") || keys.has("Enter") || touchCatchHeld,
+  };
+}
+
+function sendLocalInput() {
+  if (!isNetworkGuest()) return;
+  sendNetworkMessage({ type: "input", input: getLocalInput() });
 }
 
 function handleAi(player, dt) {
@@ -512,7 +594,8 @@ function update(dt) {
     player.catchBonusCooldown = Math.max(0, player.catchBonusCooldown - dt);
     player.caughtFlash = Math.max(0, player.caughtFlash - dt);
     player.bonusFlash = Math.max(0, player.bonusFlash - dt);
-    if (player.controlledByHuman) handleHuman(player, dt);
+    if (player.remoteControlled && isNetworkHost()) handleRemotePlayer(player, dt);
+    else if (player.controlledByHuman) handleHuman(player, dt);
     else handleAi(player, dt);
     updateSeaweedProtection(player, dt);
   }
@@ -825,10 +908,184 @@ function loop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.033);
   lastTime = now;
 
-  if (state?.running) update(dt);
+  sendLocalInput();
+  if (state?.running && canSimulateGame()) {
+    update(dt);
+    sendSnapshot(false);
+  }
   draw();
 
   animationId = requestAnimationFrame(loop);
+}
+
+function makeRoomCode() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function peerIdFromCode(code) {
+  return `spongebob-${code.trim().toLowerCase()}`;
+}
+
+function setNetworkStatus(text) {
+  networkStatus.textContent = text;
+}
+
+function updateMultiplayerUi() {
+  multiplayer.mode = isDoubleMode() ? "double" : "single";
+  multiplayerPanel.hidden = multiplayer.mode !== "double";
+
+  if (multiplayer.mode !== "double") {
+    startButton.disabled = false;
+    startButton.textContent = "开始游戏";
+    return;
+  }
+
+  const connected = Boolean(multiplayer.conn?.open);
+  readyButton.disabled = !connected;
+  if (!multiplayer.role) {
+    startButton.disabled = true;
+    startButton.textContent = "等待联机";
+  } else if (isNetworkGuest()) {
+    startButton.disabled = true;
+    startButton.textContent = "等待房主";
+  } else {
+    startButton.disabled = !(connected && multiplayer.localReady && multiplayer.remoteReady);
+    startButton.textContent = startButton.disabled ? "等待双方准备" : "开始游戏";
+  }
+  readyButton.textContent = multiplayer.localReady ? "已准备" : "我准备好了";
+}
+
+function ensurePeer(roomCode) {
+  if (!window.Peer) {
+    setNetworkStatus("联机模块未加载，请检查网络后刷新页面。");
+    return null;
+  }
+  if (multiplayer.peer && !multiplayer.peer.destroyed) {
+    multiplayer.peer.destroy();
+  }
+  multiplayer.peer = roomCode ? new Peer(peerIdFromCode(roomCode)) : new Peer();
+  multiplayer.peer.on("error", (error) => {
+    setNetworkStatus(`联机错误：${error.type || error.message}`);
+  });
+  return multiplayer.peer;
+}
+
+function attachConnection(conn) {
+  multiplayer.conn = conn;
+  conn.on("open", () => {
+    setNetworkStatus(isNetworkHost() ? `玩家 2 已加入房间 ${multiplayer.roomId}，双方点击准备后开始。` : "已加入房间，点击准备等待房主开始。");
+    sendNetworkMessage({ type: "hello", role: multiplayer.role });
+    updateMultiplayerUi();
+  });
+  conn.on("data", handleNetworkMessage);
+  conn.on("close", () => {
+    setNetworkStatus("联机已断开，请重新创建或加入房间。");
+    multiplayer.conn = null;
+    multiplayer.remoteReady = false;
+    updateMultiplayerUi();
+  });
+}
+
+function createRoom() {
+  multiplayer.mode = "double";
+  multiplayer.role = "host";
+  multiplayer.localReady = false;
+  multiplayer.remoteReady = false;
+  multiplayer.roomId = makeRoomCode();
+  roomCodeInput.value = multiplayer.roomId;
+  const peer = ensurePeer(multiplayer.roomId);
+  if (!peer) return;
+  peer.on("open", () => {
+    setNetworkStatus(`房间已创建：${multiplayer.roomId}。让第二个玩家输入这个房间码加入。`);
+    updateMultiplayerUi();
+  });
+  peer.on("connection", (conn) => {
+    if (multiplayer.conn?.open) {
+      conn.close();
+      return;
+    }
+    attachConnection(conn);
+  });
+  updateMultiplayerUi();
+}
+
+function joinRoom() {
+  const code = roomCodeInput.value.trim().toUpperCase();
+  if (!code) {
+    setNetworkStatus("请输入房间码。");
+    return;
+  }
+
+  multiplayer.mode = "double";
+  multiplayer.role = "guest";
+  multiplayer.localReady = false;
+  multiplayer.remoteReady = false;
+  multiplayer.roomId = code;
+  const peer = ensurePeer();
+  if (!peer) return;
+  peer.on("open", () => {
+    attachConnection(peer.connect(peerIdFromCode(code), { reliable: true }));
+    setNetworkStatus("正在加入房间...");
+  });
+  updateMultiplayerUi();
+}
+
+function setReady() {
+  if (!multiplayer.conn?.open) return;
+  multiplayer.localReady = true;
+  sendNetworkMessage({ type: "ready", ready: true });
+  setNetworkStatus(isNetworkHost() ? "你已准备，等待玩家 2 准备。" : "你已准备，等待房主开始。");
+  updateMultiplayerUi();
+}
+
+function sendNetworkMessage(message) {
+  if (multiplayer.conn?.open) {
+    multiplayer.conn.send(message);
+  }
+}
+
+function handleNetworkMessage(message) {
+  if (!message || typeof message !== "object") return;
+
+  if (message.type === "ready") {
+    multiplayer.remoteReady = Boolean(message.ready);
+    if (isNetworkHost() && multiplayer.localReady && multiplayer.remoteReady) {
+      setNetworkStatus("双方已准备，可以开始游戏。");
+    } else {
+      setNetworkStatus("对方已准备。");
+    }
+    updateMultiplayerUi();
+    return;
+  }
+
+  if (message.type === "input" && isNetworkHost()) {
+    multiplayer.remoteInput = {
+      left: Boolean(message.input?.left),
+      right: Boolean(message.input?.right),
+      up: Boolean(message.input?.up),
+      down: Boolean(message.input?.down),
+      catch: Boolean(message.input?.catch),
+    };
+    return;
+  }
+
+  if (message.type === "start" && isNetworkGuest()) {
+    setNetworkStatus("房主已开始游戏。");
+    return;
+  }
+
+  if (message.type === "snapshot" && isNetworkGuest()) {
+    state = message.state;
+    return;
+  }
+}
+
+function sendSnapshot(force) {
+  if (!isNetworkHost() || !state) return;
+  const now = performance.now();
+  if (!force && now - lastNetworkSync < 50) return;
+  lastNetworkSync = now;
+  sendNetworkMessage({ type: "snapshot", state });
 }
 
 window.addEventListener("keydown", (event) => {
@@ -886,7 +1143,31 @@ touchCatchButton.addEventListener("pointerup", releaseTouchCatch);
 touchCatchButton.addEventListener("pointercancel", releaseTouchCatch);
 touchCatchButton.addEventListener("pointerleave", releaseTouchCatch);
 
-startButton.addEventListener("click", resetGame);
+document.querySelectorAll("input[name='gameMode']").forEach((input) => {
+  input.addEventListener("change", updateMultiplayerUi);
+});
+
+createRoomButton.addEventListener("click", createRoom);
+joinRoomButton.addEventListener("click", joinRoom);
+readyButton.addEventListener("click", setReady);
+roomCodeInput.addEventListener("input", () => {
+  roomCodeInput.value = roomCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+});
+
+startButton.addEventListener("click", () => {
+  multiplayer.mode = isDoubleMode() ? "double" : "single";
+  if (multiplayer.mode === "double") {
+    if (!isNetworkHost()) {
+      setNetworkStatus("请等待房主开始游戏。");
+      return;
+    }
+    if (!multiplayer.localReady || !multiplayer.remoteReady) {
+      setNetworkStatus("需要两个玩家都点击准备后才能开始。");
+      return;
+    }
+  }
+  resetGame();
+});
 durationInput.addEventListener("input", () => {
   timerText.textContent = clamp(Number(durationInput.value) || 60, 20, 300);
 });
@@ -899,4 +1180,5 @@ initialHpInput.addEventListener("input", () => {
   }
 });
 
+updateMultiplayerUi();
 draw();

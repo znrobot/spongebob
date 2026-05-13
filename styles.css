@@ -88,9 +88,67 @@ h1 {
   background: #dd493d;
 }
 
+.secondary-button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.9);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.secondary-button:disabled,
+.primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .controls {
   flex-wrap: wrap;
   margin-bottom: 12px;
+}
+
+.multiplayer-panel {
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.room-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.room-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+}
+
+.room-code input {
+  width: 164px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.network-status {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 700;
 }
 
 .control-group {
@@ -327,7 +385,10 @@ canvas {
   fieldset.control-group,
   .time-control,
   .value-control,
-  .bonus-control {
+  .bonus-control,
+  .room-code,
+  .room-code input,
+  .room-actions button {
     width: 100%;
   }
 
