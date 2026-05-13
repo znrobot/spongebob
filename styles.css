@@ -133,15 +133,16 @@ h1 {
 }
 
 .room-code input {
-  width: min(52vw, 420px);
+  width: 150px;
   height: 36px;
   border: 1px solid var(--line);
   border-radius: 6px;
   color: var(--ink);
   font: inherit;
   font-size: 16px;
-  text-align: left;
+  text-align: center;
   direction: ltr;
+  text-transform: uppercase;
 }
 
 .network-status {
