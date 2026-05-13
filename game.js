@@ -26,6 +26,7 @@ const keys = new Set();
 const touchMoves = new Set();
 let touchCatchHeld = false;
 let animationId = 0;
+let loopRunning = false;
 let lastTime = 0;
 let state = null;
 let lastNetworkSync = 0;
@@ -185,9 +186,7 @@ function resetGame() {
 
   startButton.textContent = "重新开始";
   statusText.textContent = buildStartHint();
-  lastTime = performance.now();
-  cancelAnimationFrame(animationId);
-  animationId = requestAnimationFrame(loop);
+  startLoop();
   sendNetworkMessage({ type: "start" });
   sendSnapshot(true);
 }
@@ -920,6 +919,14 @@ function loop(now) {
   animationId = requestAnimationFrame(loop);
 }
 
+function startLoop() {
+  lastTime = performance.now();
+  if (!loopRunning) {
+    loopRunning = true;
+    animationId = requestAnimationFrame(loop);
+  }
+}
+
 function peerIdFromCode(code) {
   return `spongebob-${code.trim().toLowerCase()}`;
 }
@@ -1132,11 +1139,16 @@ function handleNetworkMessage(message) {
 
   if (message.type === "start" && isNetworkGuest()) {
     setNetworkStatus("房主已开始游戏。");
+    startLoop();
     return;
   }
 
   if (message.type === "snapshot" && isNetworkGuest()) {
     state = message.state;
+    if (state?.running) {
+      startLoop();
+    }
+    draw();
     return;
   }
 }
