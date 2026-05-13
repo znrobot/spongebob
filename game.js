@@ -6,18 +6,18 @@ const durationInput = document.getElementById("durationInput");
 const initialHpInput = document.getElementById("initialHpInput");
 const opponentBonusInput = document.getElementById("opponentBonusInput");
 const giantJellyInput = document.getElementById("giantJellyInput");
+const bossModeInput = document.getElementById("bossModeInput");
 const spongeScore = document.getElementById("spongeScore");
 const patrickScore = document.getElementById("patrickScore");
 const spongeHp = document.getElementById("spongeHp");
 const patrickHp = document.getElementById("patrickHp");
 const timerText = document.getElementById("timer");
 const statusText = document.getElementById("statusText");
-const joystick = document.getElementById("joystick");
-const joystickKnob = document.getElementById("joystickKnob");
-const catchButton = document.getElementById("catchButton");
+const touchCatchButton = document.getElementById("touchCatchButton");
 
 const keys = new Set();
-const touchMove = { x: 0, y: 0, active: false, pointerId: null };
+const touchMoves = new Set();
+let touchCatchHeld = false;
 let animationId = 0;
 let lastTime = 0;
 let state = null;
@@ -83,16 +83,19 @@ function spawnJellyfish() {
   };
 }
 
-function spawnGiantJellyfish() {
+function spawnGiantJellyfish(options = {}) {
+  const radius = options.radius ?? 58;
   return {
-    x: canvas.width / 2,
-    y: 130,
-    radius: 58,
-    vx: 92,
-    vy: 58,
+    x: options.x ?? canvas.width / 2,
+    y: options.y ?? 130,
+    radius,
+    vx: options.vx ?? (Math.random() < 0.5 ? -1 : 1) * (72 + Math.random() * 58),
+    vy: options.vy ?? (Math.random() < 0.5 ? -1 : 1) * (48 + Math.random() * 48),
     pulse: 0,
     hits: 0,
-    maxHits: 10,
+    maxHits: options.maxHits ?? 10,
+    points: options.points ?? 100,
+    boss: Boolean(options.boss),
     contactCooldown: 0,
     shootTimer: 0.45,
     explodeFlash: 0,
@@ -106,6 +109,7 @@ function resetGame() {
   durationInput.value = duration;
   initialHpInput.value = initialHp;
 
+  const bossModeEnabled = bossModeInput.checked;
   state = {
     playerChoice: selected,
     players: [
@@ -117,7 +121,12 @@ function resetGame() {
     remaining: duration,
     duration,
     opponentBonusEnabled: opponentBonusInput.checked,
-    giantJellyEnabled: giantJellyInput.checked,
+    giantJellyEnabled: giantJellyInput.checked || bossModeEnabled,
+    bossModeEnabled,
+    bossActive: false,
+    bossJellies: [],
+    bossSpawnTimer: 0,
+    bossDefeated: 0,
     giantJelly: null,
     giantJellyAwarded: false,
     running: true,
@@ -133,24 +142,31 @@ function resetGame() {
 
 function buildStartHint() {
   const targets = state.opponentBonusEnabled ? "水母或对方角色" : "水母";
+  if (state.bossModeEnabled) {
+    return `方向键或 WASD 移动，空格抓${targets}；打爆巨大水母后进入 Boss 关卡`;
+  }
   return state.giantJellyEnabled
-    ? `拖动左侧摇杆移动，点击右侧按钮抓${targets}；最后 10 秒会出现巨大水母`
-    : `拖动左侧摇杆移动，点击右侧按钮抓${targets}`;
+    ? `方向键或 WASD 移动，空格抓${targets}；最后 10 秒会出现巨大水母`
+    : `方向键或 WASD 移动，空格抓${targets}`;
 }
 
 function handleHuman(player, dt) {
-  let dx = touchMove.x;
-  let dy = touchMove.y;
+  let dx = 0;
+  let dy = 0;
   if (keys.has("ArrowLeft") || keys.has("a")) dx -= 1;
   if (keys.has("ArrowRight") || keys.has("d")) dx += 1;
   if (keys.has("ArrowUp") || keys.has("w")) dy -= 1;
   if (keys.has("ArrowDown") || keys.has("s")) dy += 1;
+  if (touchMoves.has("left")) dx -= 1;
+  if (touchMoves.has("right")) dx += 1;
+  if (touchMoves.has("up")) dy -= 1;
+  if (touchMoves.has("down")) dy += 1;
 
   const length = Math.hypot(dx, dy) || 1;
   player.vx = (dx / length) * 220;
   player.vy = (dy / length) * 220;
 
-  if ((keys.has(" ") || keys.has("Enter")) && player.catchCooldown <= 0) {
+  if ((keys.has(" ") || keys.has("Enter") || touchCatchHeld) && player.catchCooldown <= 0) {
     tryCatch(player);
   }
 
@@ -255,21 +271,22 @@ function tryCatchOpponentBonus(player, catchRange) {
 }
 
 function tryHitGiantJelly(player, catchRange) {
-  const giant = state.giantJelly;
-  if (!giant || giant.contactCooldown > 0 || giant.explodeFlash > 0) {
+  const giants = [state.giantJelly, ...state.bossJellies].filter(Boolean);
+  const giant = giants.find(
+    (candidate) =>
+      candidate.contactCooldown <= 0 &&
+      candidate.explodeFlash <= 0 &&
+      distance(player, candidate) < catchRange + candidate.radius,
+  );
+  if (!giant) {
     return false;
   }
 
-  if (distance(player, giant) < catchRange + giant.radius) {
-    hitGiantJelly(player);
-    return true;
-  }
-
-  return false;
+  hitGiantJelly(player, giant);
+  return true;
 }
 
-function hitGiantJelly(player) {
-  const giant = state.giantJelly;
+function hitGiantJelly(player, giant) {
   if (!giant || giant.contactCooldown > 0 || giant.explodeFlash > 0) return;
 
   giant.hits += 1;
@@ -277,11 +294,15 @@ function hitGiantJelly(player) {
   player.caughtFlash = 0.25;
 
   if (giant.hits >= giant.maxHits) {
-    player.score += 100;
+    player.score += giant.points;
     player.bonusFlash = 1;
     giant.explodeFlash = 0.5;
-    state.giantJellyAwarded = true;
-    statusText.textContent = `${player.name}打爆巨大水母，获得 100 分`;
+    if (giant.boss) {
+      state.bossDefeated += 1;
+    } else {
+      state.giantJellyAwarded = true;
+    }
+    statusText.textContent = `${player.name}打爆巨大水母，获得 ${giant.points} 分`;
   } else {
     statusText.textContent = `巨大水母 ${giant.hits}/${giant.maxHits}`;
   }
@@ -314,31 +335,42 @@ function updateJellyfish(dt) {
 }
 
 function updateGiantJelly(dt) {
-  if (!state.giantJellyEnabled || state.giantJellyAwarded) return;
+  if (!state.giantJellyEnabled && !state.bossActive) return;
 
-  if (!state.giantJelly && state.remaining <= 10) {
-    state.giantJelly = spawnGiantJellyfish();
+  if (!state.bossActive && !state.giantJelly && !state.giantJellyAwarded && state.remaining <= 10) {
+    state.giantJelly = spawnGiantJellyfish({ x: canvas.width / 2, y: 130, vx: 92, vy: 58 });
     statusText.textContent = "巨大水母出现了，接触 10 下可获得 100 分";
   }
 
   const giant = state.giantJelly;
-  if (!giant) return;
+  if (giant) {
+    updateOneGiantJelly(giant, dt);
+    if (giant.explodeFlash <= 0 && state.giantJellyAwarded) {
+      state.giantJelly = null;
+      if (state.bossModeEnabled && !state.bossActive) {
+        startBossStage();
+      }
+    }
+  }
 
+  if (state.bossActive) {
+    updateBossStage(dt);
+  }
+}
+
+function updateOneGiantJelly(giant, dt) {
   giant.pulse += dt * 5;
   giant.contactCooldown = Math.max(0, giant.contactCooldown - dt);
 
   if (giant.explodeFlash > 0) {
-    giant.explodeFlash -= dt;
-    if (giant.explodeFlash <= 0) {
-      state.giantJelly = null;
-    }
+    giant.explodeFlash = Math.max(0, giant.explodeFlash - dt);
     return;
   }
 
   giant.shootTimer -= dt;
   if (giant.shootTimer <= 0) {
     shootFrom(giant, 2);
-    giant.shootTimer = 0.6 + Math.random() * 1.05;
+    giant.shootTimer = giant.boss ? 0.45 + Math.random() * 0.55 : 0.6 + Math.random() * 1.05;
   }
 
   giant.x += giant.vx * dt;
@@ -350,10 +382,51 @@ function updateGiantJelly(dt) {
 
   for (const player of state.players) {
     if (player.hp > 0 && distance(player, giant) < player.radius + giant.radius) {
-      hitGiantJelly(player);
+      hitGiantJelly(player, giant);
       break;
     }
   }
+}
+
+function startBossStage() {
+  state.bossActive = true;
+  state.remaining = 120;
+  state.duration = 120;
+  state.bullets = [];
+  state.bossSpawnTimer = 0;
+  state.bossJellies = Array.from({ length: 5 }, (_, index) =>
+    spawnGiantJellyfish({
+      boss: true,
+      x: 160 + index * 155,
+      y: 96 + (index % 2) * 118,
+      radius: 46 + Math.random() * 12,
+      maxHits: 10,
+      points: 100,
+    }),
+  );
+  statusText.textContent = "Boss 关卡开始：2 分钟内会出现超多巨大水母，派大星也在";
+}
+
+function updateBossStage(dt) {
+  state.bossSpawnTimer -= dt;
+  if (state.bossSpawnTimer <= 0 && state.bossJellies.length < 9) {
+    state.bossJellies.push(
+      spawnGiantJellyfish({
+        boss: true,
+        x: 100 + Math.random() * (canvas.width - 200),
+        y: 80 + Math.random() * 230,
+        radius: 44 + Math.random() * 16,
+        maxHits: 10,
+        points: 100,
+      }),
+    );
+    state.bossSpawnTimer = 4.5 + Math.random() * 3;
+  }
+
+  for (const giant of state.bossJellies) {
+    updateOneGiantJelly(giant, dt);
+  }
+  state.bossJellies = state.bossJellies.filter((giant) => giant.explodeFlash > 0 || giant.hits < giant.maxHits);
 }
 
 function shootFrom(jelly, attackMultiplier = 1) {
@@ -382,7 +455,7 @@ function updateBullets(dt) {
 
     for (const player of state.players) {
       if (player.hp > 0 && player.invincible <= 0 && distance(player, bullet) < player.radius + bullet.radius) {
-        player.hp -= 1;
+        player.hp = Math.max(0, player.hp - (bullet.power || 1));
         player.invincible = 1.1;
         bullet.life = 0;
       }
@@ -437,6 +510,10 @@ function updateHud() {
   spongeHp.textContent = `生命 ${sponge.hp}`;
   patrickHp.textContent = `生命 ${patrick.hp}`;
   timerText.textContent = Math.ceil(state.remaining);
+  if (state.bossActive) {
+    timerText.textContent = `${Math.ceil(state.remaining)} | Boss ${state.bossJellies.length}`;
+    return;
+  }
   if (state.giantJelly && state.giantJelly.explodeFlash <= 0) {
     timerText.textContent = `${Math.ceil(state.remaining)} | 巨大 ${state.giantJelly.hits}/10`;
   }
@@ -673,6 +750,7 @@ function draw() {
   }
   state.jellyfish.forEach(drawJellyfish);
   drawGiantJellyfish(state.giantJelly);
+  state.bossJellies.forEach(drawGiantJellyfish);
   state.bullets.forEach(drawBullet);
   state.players.forEach(drawPlayer);
   drawEndMessage();
@@ -704,67 +782,44 @@ canvas.addEventListener("pointerdown", () => {
   if (human && state.running && human.catchCooldown <= 0) tryCatch(human);
 });
 
-function updateJoystick(event) {
-  if (!joystick || touchMove.pointerId !== event.pointerId) return;
+document.querySelectorAll("[data-move]").forEach((button) => {
+  const direction = button.dataset.move;
+  const hold = (event) => {
+    event.preventDefault();
+    touchMoves.add(direction);
+    button.classList.add("is-held");
+    button.setPointerCapture?.(event.pointerId);
+  };
+  const release = (event) => {
+    event.preventDefault();
+    touchMoves.delete(direction);
+    button.classList.remove("is-held");
+  };
 
-  const rect = joystick.getBoundingClientRect();
-  const centerX = rect.left + rect.width / 2;
-  const centerY = rect.top + rect.height / 2;
-  const maxDistance = rect.width * 0.34;
-  const rawX = event.clientX - centerX;
-  const rawY = event.clientY - centerY;
-  const distanceFromCenter = Math.hypot(rawX, rawY);
-  const limitedDistance = Math.min(distanceFromCenter, maxDistance);
-  const angle = Math.atan2(rawY, rawX);
-  const knobX = Math.cos(angle) * limitedDistance;
-  const knobY = Math.sin(angle) * limitedDistance;
+  button.addEventListener("pointerdown", hold);
+  button.addEventListener("pointerup", release);
+  button.addEventListener("pointercancel", release);
+  button.addEventListener("pointerleave", release);
+});
 
-  touchMove.x = maxDistance ? knobX / maxDistance : 0;
-  touchMove.y = maxDistance ? knobY / maxDistance : 0;
-  joystickKnob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
-}
-
-function resetJoystick() {
-  touchMove.x = 0;
-  touchMove.y = 0;
-  touchMove.active = false;
-  touchMove.pointerId = null;
-  if (joystickKnob) {
-    joystickKnob.style.transform = "translate(-50%, -50%)";
-  }
-}
-
-function catchForHuman() {
+touchCatchButton.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  touchCatchHeld = true;
+  touchCatchButton.classList.add("is-held");
+  touchCatchButton.setPointerCapture?.(event.pointerId);
   const human = state?.players.find((player) => player.controlledByHuman);
-  if (human && state.running && human.catchCooldown <= 0) {
-    tryCatch(human);
-  }
+  if (human && state.running && human.catchCooldown <= 0) tryCatch(human);
+});
+
+function releaseTouchCatch(event) {
+  event.preventDefault();
+  touchCatchHeld = false;
+  touchCatchButton.classList.remove("is-held");
 }
 
-joystick?.addEventListener("pointerdown", (event) => {
-  event.preventDefault();
-  touchMove.active = true;
-  touchMove.pointerId = event.pointerId;
-  joystick.setPointerCapture(event.pointerId);
-  updateJoystick(event);
-});
-
-joystick?.addEventListener("pointermove", (event) => {
-  event.preventDefault();
-  updateJoystick(event);
-});
-
-joystick?.addEventListener("pointerup", (event) => {
-  event.preventDefault();
-  if (touchMove.pointerId === event.pointerId) resetJoystick();
-});
-
-joystick?.addEventListener("pointercancel", resetJoystick);
-
-catchButton?.addEventListener("pointerdown", (event) => {
-  event.preventDefault();
-  catchForHuman();
-});
+touchCatchButton.addEventListener("pointerup", releaseTouchCatch);
+touchCatchButton.addEventListener("pointercancel", releaseTouchCatch);
+touchCatchButton.addEventListener("pointerleave", releaseTouchCatch);
 
 startButton.addEventListener("click", resetGame);
 durationInput.addEventListener("input", () => {

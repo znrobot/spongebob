@@ -2,7 +2,10 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#59c7d6" />
     <title>海绵宝宝和派大星抓水母</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -52,6 +55,11 @@
             <input id="giantJellyInput" type="checkbox" />
             <span>最后 10 秒巨大水母，接触 10 下 +100 分</span>
           </label>
+
+          <label class="control-group bonus-control">
+            <input id="bossModeInput" type="checkbox" />
+            <span>打爆巨大水母后进入 2 分钟 Boss 关卡</span>
+          </label>
         </div>
 
         <div class="scoreboard" aria-live="polite">
@@ -63,7 +71,7 @@
           <article class="timer-card">
             <span>剩余时间</span>
             <strong id="timer">60</strong>
-            <span id="statusText">拖动左侧摇杆移动，点击右侧按钮抓水母</span>
+            <span id="statusText">方向键或 WASD 移动，空格抓水母</span>
           </article>
           <article>
             <span class="name">派大星</span>
@@ -72,14 +80,16 @@
           </article>
         </div>
 
-        <div class="play-area">
-          <canvas id="gameCanvas" width="960" height="540" aria-label="游戏画面"></canvas>
-          <div class="touch-controls" aria-label="触屏控制">
-            <div id="joystick" class="joystick" aria-label="移动摇杆">
-              <span id="joystickKnob" class="joystick-knob"></span>
-            </div>
-            <button id="catchButton" class="catch-button" type="button" aria-label="抓水母">抓</button>
+        <canvas id="gameCanvas" width="960" height="540" aria-label="游戏画面"></canvas>
+
+        <div class="touch-controls" aria-label="触屏操作">
+          <div class="dpad" aria-label="移动方向">
+            <button class="touch-button up" type="button" data-move="up" aria-label="向上">▲</button>
+            <button class="touch-button left" type="button" data-move="left" aria-label="向左">◀</button>
+            <button class="touch-button right" type="button" data-move="right" aria-label="向右">▶</button>
+            <button class="touch-button down" type="button" data-move="down" aria-label="向下">▼</button>
           </div>
+          <button id="touchCatchButton" class="catch-button" type="button" aria-label="抓捕">抓</button>
         </div>
       </section>
     </main>
