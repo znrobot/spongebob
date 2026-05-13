@@ -41,6 +41,7 @@ const multiplayer = {
   remoteReady: false,
   remoteInput: { left: false, right: false, up: false, down: false, catch: false },
   roomId: "",
+  joinTimer: null,
 };
 
 const characters = {
@@ -920,7 +921,16 @@ function loop(now) {
 }
 
 function peerIdFromCode(code) {
-  return code.trim();
+  return `spongebob-${code.trim().toLowerCase()}`;
+}
+
+function makeRoomCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i += 1) {
+    code += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return code;
 }
 
 function setNetworkStatus(text) {
@@ -938,6 +948,7 @@ function updateMultiplayerUi() {
   }
 
   const connected = Boolean(multiplayer.conn?.open);
+  joinRoomButton.disabled = isNetworkHost();
   readyButton.disabled = !connected;
   if (!multiplayer.role) {
     startButton.disabled = true;
@@ -977,9 +988,16 @@ function ensurePeer(peerId) {
   if (multiplayer.peer && !multiplayer.peer.destroyed) {
     multiplayer.peer.destroy();
   }
-  multiplayer.peer = peerId ? new Peer(peerId) : new Peer();
+  multiplayer.peer = peerId ? new Peer(peerId) : new Peer(undefined);
   multiplayer.peer.on("error", (error) => {
     setNetworkStatus(`连接错误：${formatPeerError(error)}`);
+    if (isNetworkHost() && error?.type === "unavailable-id") {
+      setNetworkStatus("这个房间号刚好被占用，请再点一次创建房间。");
+      multiplayer.role = null;
+      multiplayer.roomId = "";
+      roomCodeInput.value = "";
+      updateMultiplayerUi();
+    }
   });
   return multiplayer.peer;
 }
@@ -987,12 +1005,14 @@ function ensurePeer(peerId) {
 function attachConnection(conn) {
   multiplayer.conn = conn;
   conn.on("open", () => {
+    clearTimeout(multiplayer.joinTimer);
     setNetworkStatus(isNetworkHost() ? `玩家 2 已加入房间 ${multiplayer.roomId}，双方点击准备后开始。` : "已加入房间，点击准备等待房主开始。");
     sendNetworkMessage({ type: "hello", role: multiplayer.role });
     updateMultiplayerUi();
   });
   conn.on("data", handleNetworkMessage);
   conn.on("close", () => {
+    clearTimeout(multiplayer.joinTimer);
     setNetworkStatus("联机已断开，请重新创建或加入房间。");
     multiplayer.conn = null;
     multiplayer.remoteReady = false;
@@ -1005,14 +1025,12 @@ function createRoom() {
   multiplayer.role = "host";
   multiplayer.localReady = false;
   multiplayer.remoteReady = false;
-  multiplayer.roomId = "";
-  roomCodeInput.value = "";
-  const peer = ensurePeer();
+  multiplayer.roomId = makeRoomCode();
+  roomCodeInput.value = multiplayer.roomId;
+  const peer = ensurePeer(peerIdFromCode(multiplayer.roomId));
   if (!peer) return;
   peer.on("open", () => {
-    multiplayer.roomId = peer.id;
-    roomCodeInput.value = peer.id;
-    setNetworkStatus(`房间已创建：${multiplayer.roomId}。让第二个玩家输入这个房间码加入。`);
+    setNetworkStatus(`房间已创建：${multiplayer.roomId}。房主已在房间里，不要再点加入；让第二个玩家输入这个房间码。`);
     updateMultiplayerUi();
   });
   peer.on("connection", (conn) => {
@@ -1026,7 +1044,12 @@ function createRoom() {
 }
 
 function joinRoom() {
-  const code = roomCodeInput.value.trim();
+  if (isNetworkHost()) {
+    setNetworkStatus("你已经是房主并在房间里了，请等待另一个玩家加入。");
+    return;
+  }
+
+  const code = roomCodeInput.value.trim().toUpperCase();
   if (!code) {
     setNetworkStatus("请输入房间码。");
     return;
@@ -1041,6 +1064,12 @@ function joinRoom() {
   if (!peer) return;
   peer.on("open", () => {
     attachConnection(peer.connect(peerIdFromCode(code), { reliable: true }));
+    clearTimeout(multiplayer.joinTimer);
+    multiplayer.joinTimer = setTimeout(() => {
+      if (!multiplayer.conn?.open) {
+        setNetworkStatus("还没有连上房间。请确认房主页面保持打开，并且输入的是最新 6 位房间码。");
+      }
+    }, 7000);
     setNetworkStatus("正在加入房间...");
   });
   updateMultiplayerUi();
@@ -1184,7 +1213,7 @@ joinRoomButton.addEventListener("click", joinRoom);
 copyRoomButton.addEventListener("click", copyRoomCode);
 readyButton.addEventListener("click", setReady);
 roomCodeInput.addEventListener("input", () => {
-  roomCodeInput.value = roomCodeInput.value.trim();
+  roomCodeInput.value = roomCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
 });
 
 startButton.addEventListener("click", () => {
