@@ -17,6 +17,7 @@ const touchCatchButton = document.getElementById("touchCatchButton");
 const multiplayerPanel = document.getElementById("multiplayerPanel");
 const createRoomButton = document.getElementById("createRoomButton");
 const joinRoomButton = document.getElementById("joinRoomButton");
+const copyRoomButton = document.getElementById("copyRoomButton");
 const readyButton = document.getElementById("readyButton");
 const roomCodeInput = document.getElementById("roomCodeInput");
 const networkStatus = document.getElementById("networkStatus");
@@ -1045,6 +1046,22 @@ function joinRoom() {
   updateMultiplayerUi();
 }
 
+async function copyRoomCode() {
+  const code = roomCodeInput.value.trim();
+  if (!code) {
+    setNetworkStatus("还没有房间码可复制。");
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(code);
+    setNetworkStatus("房间码已复制，可以发给另一个玩家。");
+  } catch {
+    roomCodeInput.select();
+    setNetworkStatus("已选中房间码，请手动复制。");
+  }
+}
+
 function setReady() {
   if (!multiplayer.conn?.open) return;
   multiplayer.localReady = true;
@@ -1164,6 +1181,7 @@ document.querySelectorAll("input[name='gameMode']").forEach((input) => {
 
 createRoomButton.addEventListener("click", createRoom);
 joinRoomButton.addEventListener("click", joinRoom);
+copyRoomButton.addEventListener("click", copyRoomCode);
 readyButton.addEventListener("click", setReady);
 roomCodeInput.addEventListener("input", () => {
   roomCodeInput.value = roomCodeInput.value.trim();
