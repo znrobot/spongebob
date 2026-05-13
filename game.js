@@ -918,12 +918,8 @@ function loop(now) {
   animationId = requestAnimationFrame(loop);
 }
 
-function makeRoomCode() {
-  return Math.random().toString(36).slice(2, 8).toUpperCase();
-}
-
 function peerIdFromCode(code) {
-  return `spongebob-${code.trim().toLowerCase()}`;
+  return code.trim();
 }
 
 function setNetworkStatus(text) {
@@ -955,7 +951,24 @@ function updateMultiplayerUi() {
   readyButton.textContent = multiplayer.localReady ? "已准备" : "我准备好了";
 }
 
-function ensurePeer(roomCode) {
+function formatPeerError(error) {
+  const type = error?.type || "";
+  if (type === "peer-unavailable") {
+    return "找不到这个房间。请确认房主已经创建成功，并完整复制房间码。";
+  }
+  if (type === "unavailable-id") {
+    return "这个房间码已被占用，请重新创建房间。";
+  }
+  if (type === "network" || type === "server-error" || type === "socket-error") {
+    return "联机服务器暂时连不上，请换个网络或稍后重试。";
+  }
+  if (type === "browser-incompatible") {
+    return "当前浏览器不支持 WebRTC 联机，请换 Chrome、Safari 或 Edge。";
+  }
+  return error?.message || type || "未知联机错误";
+}
+
+function ensurePeer(peerId) {
   if (!window.Peer) {
     setNetworkStatus("联机模块未加载，请检查网络后刷新页面。");
     return null;
@@ -963,9 +976,9 @@ function ensurePeer(roomCode) {
   if (multiplayer.peer && !multiplayer.peer.destroyed) {
     multiplayer.peer.destroy();
   }
-  multiplayer.peer = roomCode ? new Peer(peerIdFromCode(roomCode)) : new Peer();
+  multiplayer.peer = peerId ? new Peer(peerId) : new Peer();
   multiplayer.peer.on("error", (error) => {
-    setNetworkStatus(`联机错误：${error.type || error.message}`);
+    setNetworkStatus(`连接错误：${formatPeerError(error)}`);
   });
   return multiplayer.peer;
 }
@@ -991,11 +1004,13 @@ function createRoom() {
   multiplayer.role = "host";
   multiplayer.localReady = false;
   multiplayer.remoteReady = false;
-  multiplayer.roomId = makeRoomCode();
-  roomCodeInput.value = multiplayer.roomId;
-  const peer = ensurePeer(multiplayer.roomId);
+  multiplayer.roomId = "";
+  roomCodeInput.value = "";
+  const peer = ensurePeer();
   if (!peer) return;
   peer.on("open", () => {
+    multiplayer.roomId = peer.id;
+    roomCodeInput.value = peer.id;
     setNetworkStatus(`房间已创建：${multiplayer.roomId}。让第二个玩家输入这个房间码加入。`);
     updateMultiplayerUi();
   });
@@ -1010,7 +1025,7 @@ function createRoom() {
 }
 
 function joinRoom() {
-  const code = roomCodeInput.value.trim().toUpperCase();
+  const code = roomCodeInput.value.trim();
   if (!code) {
     setNetworkStatus("请输入房间码。");
     return;
@@ -1151,7 +1166,7 @@ createRoomButton.addEventListener("click", createRoom);
 joinRoomButton.addEventListener("click", joinRoom);
 readyButton.addEventListener("click", setReady);
 roomCodeInput.addEventListener("input", () => {
-  roomCodeInput.value = roomCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  roomCodeInput.value = roomCodeInput.value.trim();
 });
 
 startButton.addEventListener("click", () => {
