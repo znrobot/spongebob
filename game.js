@@ -202,6 +202,9 @@ function startRandomMatch() {
   }
 
   function finalizeGuest(conn, code) {
+    // Remove the matched connection from conns so cleanupAttempt won't close it
+    const idx = conns.indexOf(conn);
+    if (idx >= 0) conns.splice(idx, 1);
     cleanupAttempt();
     if (currentPeer) {
       multiplayer.peer = currentPeer;
@@ -1184,16 +1187,17 @@ function updateMultiplayerUi() {
   if (multiplayer.mode !== "double") {
     startButton.disabled = false;
     startButton.textContent = "开始游戏";
-    randomMatchButton.disabled = true;
+    if (randomMatchButton) randomMatchButton.disabled = true;
     return;
   }
 
-  const connected = Boolean(multiplayer.conn?.open);
+  const connected = Boolean(multiplayer.conn);
+  const connOpen = Boolean(multiplayer.conn?.open);
   const matching = matchmaking.active;
 
   joinRoomButton.disabled = isNetworkHost() || matching;
   readyButton.disabled = !connected || matching;
-  randomMatchButton.disabled = connected && !matching;
+  if (randomMatchButton) randomMatchButton.disabled = connected && !matching;
   createRoomButton.disabled = matching;
 
   if (matching) {
@@ -1209,7 +1213,7 @@ function updateMultiplayerUi() {
     startButton.disabled = true;
     startButton.textContent = "等待房主";
   } else {
-    startButton.disabled = !(connected && multiplayer.localReady && multiplayer.remoteReady);
+    startButton.disabled = !(connOpen && multiplayer.localReady && multiplayer.remoteReady);
     startButton.textContent = startButton.disabled ? "等待双方准备" : "开始游戏";
   }
   readyButton.textContent = multiplayer.localReady ? "已准备" : "我准备好了";
@@ -1354,7 +1358,7 @@ async function copyRoomCode() {
 }
 
 function setReady() {
-  if (!multiplayer.conn?.open) return;
+  if (!multiplayer.conn) return;
   multiplayer.localReady = true;
   sendNetworkMessage({ type: "ready", ready: true });
   setNetworkStatus(isNetworkHost() ? "你已准备，等待玩家 2 准备。" : "你已准备，等待房主开始。");
