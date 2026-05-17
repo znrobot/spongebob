@@ -1256,18 +1256,20 @@ function ensurePeer(peerId) {
 
 function attachConnection(conn) {
   multiplayer.conn = conn;
+  let opened = false;
 
   function onOpen() {
+    if (opened) return;
+    opened = true;
     clearTimeout(multiplayer.joinTimer);
     setNetworkStatus(isNetworkHost() ? `玩家 2 已加入房间 ${multiplayer.roomId}，双方点击准备后开始。` : "已加入房间，点击准备等待房主开始。");
     sendNetworkMessage({ type: "hello", role: multiplayer.role });
     updateMultiplayerUi();
   }
 
+  conn.on("open", onOpen);
   if (conn.open) {
     onOpen();
-  } else {
-    conn.on("open", onOpen);
   }
 
   conn.on("data", handleNetworkMessage);
