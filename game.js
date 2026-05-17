@@ -50,10 +50,7 @@ const MATCHMAKING_POOL_SIZE = 30;
 
 const matchmaking = {
   active: false,
-  scanTimer: null,
-  hostTimer: null,
   scanPeer: null,
-  pendingConns: [],
 };
 
 function getMatchmakingCode(index) {
@@ -180,129 +177,197 @@ function startRandomMatch() {
   const pool = Array.from({ length: MATCHMAKING_POOL_SIZE }, (_, i) => i);
   shuffleArray(pool);
 
-  const scanPeer = new Peer();
-  matchmaking.scanPeer = scanPeer;
-  const conns = [];
   let matched = false;
+  let hostIdx = 0;
+  let currentPeer = null;
+  let conns = [];
+  let openIncoming = null;
+  let retryTimer = null;
 
-  const scanCodes = pool.slice(0, 10);
-  for (const code of scanCodes) {
-    const conn = scanPeer.connect(peerIdFromCode(getMatchmakingCode(code)), { reliable: true });
-    conn.on("open", () => {
-      if (matched) return;
-      matched = true;
-      matchmaking.active = false;
-      randomMatchButton.textContent = "随机配对";
-      clearTimeout(matchmaking.scanTimer);
-      clearTimeout(matchmaking.hostTimer);
+  function cleanupAttempt() {
+    clearTimeout(retryTimer);
+    for (const c of conns) {
+      try { c.close(); } catch (e) { /* ignore */ }
+    }
+    conns = [];
+    openIncoming = null;
+  }
 
-      for (const c of conns) {
-        if (c !== conn) try { c.close(); } catch (e) { /* ignore */ }
-      }
-      matchmaking.pendingConns = [];
+  function cleanupPeer() {
+    cleanupAttempt();
+    if (currentPeer && !currentPeer.destroyed) {
+      currentPeer.destroy();
+    }
+    currentPeer = null;
+  }
 
-      multiplayer.peer = scanPeer;
+  function finalizeGuest(conn, code) {
+    cleanupAttempt();
+    if (currentPeer) {
+      multiplayer.peer = currentPeer;
       multiplayer.peer.on("error", (error) => {
         setNetworkStatus(`连接错误：${formatPeerError(error)}`);
       });
       matchmaking.scanPeer = null;
-
-      multiplayer.role = "guest";
-      multiplayer.mode = "double";
-      multiplayer.roomId = getMatchmakingCode(code);
-      attachConnection(conn);
-
-      setTimeout(() => {
-        multiplayer.localReady = true;
-        sendNetworkMessage({ type: "ready", ready: true, matchmaking: true });
-        setNetworkStatus("已找到对手，准备开始！");
-        updateMultiplayerUi();
-      }, 300);
-    });
-    conn.on("error", () => { /* ignore scan errors */ });
-    conns.push(conn);
+      currentPeer = null;
+    }
+    multiplayer.role = "guest";
+    multiplayer.mode = "double";
+    multiplayer.roomId = getMatchmakingCode(code);
+    attachConnection(conn);
+    setTimeout(() => {
+      multiplayer.localReady = true;
+      sendNetworkMessage({ type: "ready", ready: true, matchmaking: true });
+      setNetworkStatus("已找到对手，准备开始！");
+      updateMultiplayerUi();
+    }, 300);
   }
-  matchmaking.pendingConns = conns;
 
-  matchmaking.scanTimer = setTimeout(() => {
-    if (matched) return;
-
-    for (const c of conns) {
-      try { c.close(); } catch (e) { /* ignore */ }
+  function finalizeHost(conn) {
+    cleanupAttempt();
+    if (currentPeer) {
+      multiplayer.peer = currentPeer;
+      multiplayer.peer.on("error", (error) => {
+        setNetworkStatus(`连接错误：${formatPeerError(error)}`);
+      });
+      matchmaking.scanPeer = null;
+      currentPeer = null;
     }
-    matchmaking.pendingConns = [];
-    if (scanPeer && !scanPeer.destroyed) {
-      scanPeer.destroy();
-    }
-    matchmaking.scanPeer = null;
-
-    if (!matchmaking.active) return;
-
-    const hostCode = getMatchmakingCode(pool[0]);
     multiplayer.role = "host";
     multiplayer.mode = "double";
-    multiplayer.roomId = hostCode;
+    multiplayer.roomId = getMatchmakingCode(pool[hostIdx]);
     multiplayer.localReady = true;
     multiplayer.remoteReady = false;
     multiplayer._matchmakingHost = true;
-    roomCodeInput.value = hostCode;
+    attachConnection(conn);
+    setNetworkStatus("已找到对手！等待对方准备...");
+    updateMultiplayerUi();
+  }
 
-    const hostPeer = ensurePeer(peerIdFromCode(hostCode));
-    if (!hostPeer) {
-      setNetworkStatus("联机模块加载失败，请重试");
-      cancelRandomMatch();
-      return;
+  function tryHost() {
+    if (!matchmaking.active || matched) return;
+    if (hostIdx >= MATCHMAKING_POOL_SIZE) {
+      hostIdx = 0;
+      shuffleArray(pool);
     }
 
-    hostPeer.on("open", () => {
-      if (!matchmaking.active) return;
-      setNetworkStatus("等待对手加入...");
-      updateMultiplayerUi();
+    cleanupPeer();
+    const code = getMatchmakingCode(pool[hostIdx]);
+    const peer = new Peer(peerIdFromCode(code));
+    currentPeer = peer;
+    matchmaking.scanPeer = peer;
+
+    peer.on("open", () => {
+      if (!matchmaking.active || matched || currentPeer !== peer) return;
+
+      // Scan ALL other codes as guest, simultaneously
+      for (let i = 0; i < MATCHMAKING_POOL_SIZE; i++) {
+        if (i === hostIdx) continue;
+        const scanCode = pool[i];
+        const conn = peer.connect(peerIdFromCode(getMatchmakingCode(scanCode)), { reliable: true });
+        conn.on("open", () => {
+          if (matched || currentPeer !== peer || !matchmaking.active) {
+            try { conn.close(); } catch (e) { /* ignore */ }
+            return;
+          }
+
+          // Check for cross-connect: did we also receive an incoming from them?
+          if (openIncoming && openIncoming.open && (openIncoming.peer || "") === (conn.peer || "")) {
+            const myCode = getMatchmakingCode(pool[hostIdx]);
+            const theirCode = getMatchmakingCode(scanCode);
+            if (myCode < theirCode) {
+              // I'm host — close my outgoing, keep incoming
+              try { conn.close(); } catch (e) { /* ignore */ }
+              // incoming handler will finalize as host
+              return;
+            }
+            // I'm guest — close incoming, keep outgoing
+            try { openIncoming.close(); } catch (e) { /* ignore */ }
+            openIncoming = null;
+          }
+
+          matched = true;
+          matchmaking.active = false;
+          randomMatchButton.textContent = "随机配对";
+          roomCodeInput.value = "";
+          finalizeGuest(conn, scanCode);
+        });
+        conn.on("error", () => { /* scan errors are expected */ });
+        conns.push(conn);
+      }
     });
 
-    hostPeer.on("connection", (conn) => {
-      if (!matchmaking.active) return;
-      if (multiplayer.conn?.open) {
-        conn.close();
+    peer.on("connection", (conn) => {
+      if (!matchmaking.active || matched || currentPeer !== peer) {
+        try { conn.close(); } catch (e) { /* ignore */ }
         return;
       }
-      matchmaking.active = false;
-      randomMatchButton.textContent = "随机配对";
-      clearTimeout(matchmaking.hostTimer);
-      attachConnection(conn);
-      setNetworkStatus("已找到对手！等待对方准备...");
-      updateMultiplayerUi();
+
+      openIncoming = conn;
+      const theirPeerId = conn.peer || "";
+      const theirCode = theirPeerId.replace("spongebob-", "");
+      const myCode = getMatchmakingCode(pool[hostIdx]);
+
+      // Brief delay to let our outgoing to them open (cross-connect detection)
+      setTimeout(() => {
+        if (!matchmaking.active || matched || currentPeer !== peer) {
+          try { conn.close(); } catch (e) { /* ignore */ }
+          return;
+        }
+
+        const myOutgoing = conns.find((c) => c.open && (c.peer || "") === theirPeerId);
+        if (myOutgoing) {
+          // Cross-connect: lower code acts as HOST
+          if (myCode < theirCode) {
+            try { myOutgoing.close(); } catch (e) { /* ignore */ }
+            matched = true;
+            matchmaking.active = false;
+            randomMatchButton.textContent = "随机配对";
+            roomCodeInput.value = "";
+            finalizeHost(conn);
+          } else {
+            try { conn.close(); } catch (e) { /* ignore */ }
+            openIncoming = null;
+          }
+          return;
+        }
+
+        // No cross-connect: we're the host
+        matched = true;
+        matchmaking.active = false;
+        randomMatchButton.textContent = "随机配对";
+        roomCodeInput.value = "";
+        finalizeHost(conn);
+      }, 250);
     });
 
-    matchmaking.hostTimer = setTimeout(() => {
-      if (matchmaking.active && !multiplayer.conn?.open) {
-        setNetworkStatus("等待超时，点击按钮重新搜索");
-        cancelRandomMatch();
+    peer.on("error", (error) => {
+      if (matched || !matchmaking.active) return;
+      if (error?.type === "unavailable-id") {
+        // Code taken, try next
+        hostIdx++;
+        tryHost();
       }
-    }, 30000);
+    });
 
-    updateMultiplayerUi();
-  }, 5000);
+    // Rotate host code every 12s to increase chance of overlap
+    retryTimer = setTimeout(() => {
+      if (!matchmaking.active || matched) return;
+      hostIdx++;
+      tryHost();
+    }, 12000);
+  }
+
+  tryHost();
 }
 
 function cancelRandomMatch() {
   matchmaking.active = false;
   multiplayer._matchmakingHost = false;
-  clearTimeout(matchmaking.scanTimer);
-  clearTimeout(matchmaking.hostTimer);
-
-  if (matchmaking.pendingConns) {
-    for (const c of matchmaking.pendingConns) {
-      try { c.close(); } catch (e) { /* ignore */ }
-    }
-    matchmaking.pendingConns = [];
-  }
-
   if (matchmaking.scanPeer && !matchmaking.scanPeer.destroyed) {
     matchmaking.scanPeer.destroy();
     matchmaking.scanPeer = null;
   }
-
   randomMatchButton.textContent = "随机配对";
   roomCodeInput.value = multiplayer.roomId || "";
   if (!multiplayer.conn?.open) {
