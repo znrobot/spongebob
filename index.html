@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#59c7d6" />
+    <title>海绵宝宝和派大星抓水母</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="game-shell" aria-label="海绵宝宝和派大星抓水母游戏">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Bikini Bottom Jelly Hunt</p>
+            <h1>海绵宝宝和派大星抓水母</h1>
+          </div>
+          <button id="rulesButton" class="secondary-button" type="button">游戏规则</button>
+          <button id="startButton" class="primary-button" type="button">开始游戏</button>
+        </header>
+
+        <div class="controls" aria-label="游戏设置">
+          <fieldset class="control-group">
+            <legend>游戏模式</legend>
+            <label class="choice">
+              <input type="radio" name="gameMode" value="single" checked />
+              单人
+            </label>
+            <label class="choice">
+              <input type="radio" name="gameMode" value="double" />
+              双人联机
+            </label>
+          </fieldset>
+
+          <fieldset class="control-group">
+            <legend>选择角色</legend>
+            <label class="choice">
+              <input type="radio" name="player" value="spongebob" checked />
+              <span class="swatch sponge"></span>
+              海绵宝宝
+            </label>
+            <label class="choice">
+              <input type="radio" name="player" value="patrick" />
+              <span class="swatch patrick"></span>
+              派大星
+            </label>
+          </fieldset>
+
+          <label class="control-group time-control">
+            <span>游戏时间</span>
+            <input id="durationInput" type="number" min="20" max="300" step="10" value="60" />
+            <span>秒</span>
+          </label>
+
+          <label class="control-group value-control">
+            <span>初始生命值</span>
+            <input id="initialHpInput" type="number" min="1" max="99" step="1" value="10" />
+          </label>
+
+          <div class="control-group level-info" id="levelInfo">
+            <span>关卡</span>
+            <strong id="levelIndicator">1 / 5</strong>
+            <span id="levelDesc">普通水母</span>
+          </div>
+
+          <div class="control-group" id="freeplayAdvanceControls" hidden>
+            <span style="font-weight:700;margin-right:8px;">第六关机制</span>
+            <label class="bonus-control">
+              <input type="checkbox" id="freeOpponentBonus" />
+              <span>碰到对方角色 +10 分</span>
+            </label>
+            <label class="bonus-control">
+              <input type="checkbox" id="freeGiantJelly" />
+              <span>巨大水母 10 下 +100 分</span>
+            </label>
+            <label class="bonus-control">
+              <input type="checkbox" id="freeBossMode" />
+              <span>巨大水母 → Boss 关卡</span>
+            </label>
+            <button id="startFreePlayAdvance" class="secondary-button" type="button" style="margin-left:10px;">开始第六关</button>
+          </div>
+        </div>
+
+        <div id="multiplayerPanel" class="multiplayer-panel" hidden>
+          <div class="room-actions">
+            <button id="createRoomButton" class="secondary-button" type="button">创建房间</button>
+            <label class="room-code">
+              <span>房间码</span>
+              <input id="roomCodeInput" type="text" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="输入房间码" />
+            </label>
+            <button id="copyRoomButton" class="secondary-button" type="button">复制房间码</button>
+            <button id="joinRoomButton" class="secondary-button" type="button">加入房间</button>
+            <button id="readyButton" class="secondary-button" type="button" disabled>我准备好了</button>
+          </div>
+          <p id="networkStatus" class="network-status">双人联机需要两台设备打开此网页：一人创建房间，另一人输入房间码加入。</p>
+        </div>
+
+        <div class="scoreboard" aria-live="polite">
+          <article>
+            <span class="name">海绵宝宝</span>
+            <strong id="spongeScore">0</strong>
+            <span id="spongeHp">生命 10</span>
+          </article>
+          <article class="timer-card">
+            <span>剩余时间</span>
+            <strong id="timer">60</strong>
+            <span id="statusText">方向键或 WASD 移动，空格抓水母</span>
+          </article>
+          <article>
+            <span class="name">派大星</span>
+            <strong id="patrickScore">0</strong>
+            <span id="patrickHp">生命 10</span>
+          </article>
+        </div>
+
+        <div class="canvas-wrapper">
+          <canvas id="gameCanvas" width="960" height="540" aria-label="游戏画面"></canvas>
+          <button id="levelSelectButton" class="house-button" type="button" title="选择关卡" aria-label="选择关卡">🏠</button>
+          <button id="pauseButton" class="pause-button" type="button" title="暂停 / 继续" aria-label="暂停">⏸</button>
+        </div>
+
+        <div id="rulesOverlay" class="overlay" hidden>
+          <div class="level-select-panel" style="max-width:620px;">
+            <h2>游戏规则</h2>
+            <div style="line-height:1.8;font-weight:700;color:var(--ink);">
+              <p>🕹 <strong>操作</strong>：方向键或 WASD 移动，空格键抓捕水母。手机端使用屏幕按钮。</p>
+              <p>🎯 <strong>目标</strong>：在限定时间内抓到更多水母得分，生命值耗尽则游戏结束。</p>
+              <p>🏆 <strong>关卡</strong>：共 6 关，通关后解锁下一关。</p>
+              <p>🤝 <strong>第 2 关 · 玩家互助</strong>：抓到对方角色 +10 分。</p>
+              <p>🦑 <strong>第 3 关 · 巨大水母</strong>：最后 10 秒出现巨大水母，触碰 10 下 +100 分，会发射子弹。</p>
+              <p>👑 <strong>第 4 关 · Boss</strong>：打爆巨大水母后进入 Boss 关卡，击败所有 Boss 水母。</p>
+              <p>🔥 <strong>第 5 关 · 全部叠加</strong>：三种机制同时开启。</p>
+              <p>🎛 <strong>第 6 关 · 自由关卡</strong>：进入前可自选组合机制。</p>
+              <p>🌿 <strong>海草</strong>：碰到海草获得短暂无敌保护。</p>
+              <p>👥 <strong>双人联机</strong>：一人创建房间，另一人输入房间码加入。</p>
+              <p>⏸ <strong>暂停</strong>：点击右上角暂停键或按空格（非通关确认时）。</p>
+            </div>
+            <button id="closeRules" class="secondary-button" type="button" style="width:100%;min-height:42px;font-size:1rem;margin-top:10px;">关闭</button>
+          </div>
+        </div>
+
+        <div id="levelSelectOverlay" class="overlay" hidden>
+          <div class="level-select-panel" id="levelSelectPanel">
+            <h2 id="levelSelectTitle">选择关卡</h2>
+            <div class="level-cards" id="levelCards"></div>
+            <div id="freePlayConfig" class="free-play-config" hidden>
+              <h3>第六关 — 可选择关卡</h3>
+              <p style="color:var(--muted);font-weight:700;">请在下方主界面勾选关卡机制，然后点击开始</p>
+              <div class="free-play-actions">
+                <button id="startFreePlay" class="primary-button" type="button">开始第六关</button>
+                <button id="backToLevelCards" class="secondary-button" type="button">返回选关</button>
+              </div>
+            </div>
+            <button id="closeLevelSelect" class="secondary-button" type="button">返回游戏</button>
+          </div>
+        </div>
+
+        <div class="touch-controls" aria-label="触屏操作">
+          <div class="dpad" aria-label="移动方向">
+            <button class="touch-button up" type="button" data-move="up" aria-label="向上">▲</button>
+            <button class="touch-button left" type="button" data-move="left" aria-label="向左">◀</button>
+            <button class="touch-button right" type="button" data-move="right" aria-label="向右">▶</button>
+            <button class="touch-button down" type="button" data-move="down" aria-label="向下">▼</button>
+          </div>
+          <button id="touchCatchButton" class="catch-button" type="button" aria-label="抓捕">抓</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>
