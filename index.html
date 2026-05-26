@@ -133,6 +133,7 @@
               <p>👑 <strong>第 4 关 · Boss</strong>：打爆巨大水母后进入 Boss 关卡，击败所有 Boss 水母。</p>
               <p>🔥 <strong>第 5 关 · 全部叠加</strong>：三种机制同时开启。</p>
               <p>🎛 <strong>第 6 关 · 自由关卡</strong>：进入前可自选组合机制。</p>
+              <p>⚡ <strong>战前增幅</strong>：每一关开始前可选择一项增幅 — 🧲磁力吸噬（将水母吸到玩家附近）、✖️2双倍分数、⚡双倍速度。📺 观看 30 秒视频可获得全部三项增幅（因无视频，点击即可获得）。</p>
               <p>🌿 <strong>海草</strong>：碰到海草获得短暂无敌保护。</p>
               <p>👥 <strong>双人联机</strong>：一人创建房间，另一人输入房间码加入。</p>
               <p>⏸ <strong>暂停</strong>：点击右上角暂停键或按空格（非通关确认时）。</p>
@@ -154,6 +155,32 @@
               </div>
             </div>
             <button id="closeLevelSelect" class="secondary-button" type="button">返回游戏</button>
+          </div>
+        </div>
+
+        <div id="powerUpOverlay" class="overlay" hidden>
+          <div class="level-select-panel" style="max-width:580px;">
+            <h2 id="powerUpTitle">选择增幅</h2>
+            <p style="text-align:center;color:var(--muted);font-weight:700;">选择一项增幅后开始游戏</p>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0;">
+              <div class="powerup-card" id="puMagnet" data-power="magnet">
+                <span style="font-size:2.2rem;">🧲</span>
+                <strong>磁力吸噬</strong>
+                <span style="font-size:0.78rem;color:var(--muted);">磁铁把水母吸到附近</span>
+              </div>
+              <div class="powerup-card" id="puDoubleScore" data-power="doubleScore">
+                <span style="font-size:2.2rem;">✖️2</span>
+                <strong>双倍分数</strong>
+                <span style="font-size:0.78rem;color:var(--muted);">抓到水母分数翻倍</span>
+              </div>
+              <div class="powerup-card" id="puDoubleSpeed" data-power="doubleSpeed">
+                <span style="font-size:2.2rem;">⚡</span>
+                <strong>双倍速度</strong>
+                <span style="font-size:0.78rem;color:var(--muted);">移动速度翻倍</span>
+              </div>
+            </div>
+            <button id="watchAdButton" class="secondary-button" type="button" style="width:100%;min-height:46px;font-size:1rem;margin-bottom:8px;">📺 观看视频获得全部增幅</button>
+            <button id="confirmPowerUp" class="primary-button" type="button" style="width:100%;" disabled>选择增幅后开始</button>
           </div>
         </div>
 

@@ -5,6 +5,12 @@ const startButton = document.getElementById("startButton");
 const rulesButton = document.getElementById("rulesButton");
 const rulesOverlay = document.getElementById("rulesOverlay");
 const closeRules = document.getElementById("closeRules");
+const powerUpOverlay = document.getElementById("powerUpOverlay");
+const confirmPowerUp = document.getElementById("confirmPowerUp");
+const puMagnet = document.getElementById("puMagnet");
+const puDoubleScore = document.getElementById("puDoubleScore");
+const puDoubleSpeed = document.getElementById("puDoubleSpeed");
+const watchAdButton = document.getElementById("watchAdButton");
 const durationInput = document.getElementById("durationInput");
 const initialHpInput = document.getElementById("initialHpInput");
 const levelIndicator = document.getElementById("levelIndicator");
@@ -40,6 +46,8 @@ const pauseButton = document.getElementById("pauseButton");
 
 const completedLevels = new Set();
 let level5LockClicks = 0;
+let selectedPowerUp = null;
+let pendingPowerUpCallback = null;
 
 const keys = new Set();
 const touchMoves = new Set();
@@ -202,46 +210,49 @@ function resetGame() {
   durationInput.value = duration;
   initialHpInput.value = initialHp;
 
-  const config = LEVELS[0];
-  const spongePlayer = createPlayer(characters.spongebob, multiplayer.mode === "double" || selected === "spongebob", initialHp);
-  const patrickPlayer = createPlayer(characters.patrick, selected === "patrick" && multiplayer.mode !== "double", initialHp);
-  if (multiplayer.mode === "double") {
-    patrickPlayer.remoteControlled = true;
-  }
+  showPowerUpSelect(function (powerUp) {
+    const config = LEVELS[0];
+    const spongePlayer = createPlayer(characters.spongebob, multiplayer.mode === "double" || selected === "spongebob", initialHp);
+    const patrickPlayer = createPlayer(characters.patrick, selected === "patrick" && multiplayer.mode !== "double", initialHp);
+    if (multiplayer.mode === "double") {
+      patrickPlayer.remoteControlled = true;
+    }
 
-  state = {
-    playerChoice: selected,
-    players: [spongePlayer, patrickPlayer],
-    jellyfish: Array.from({ length: 7 }, spawnJellyfish),
-    bullets: [],
-    remaining: duration,
-    duration,
-    initialHp,
-    currentLevel: 1,
-    gameMode: "jellyfish",
-    opponentBonusEnabled: config.opponentBonus,
-    giantJellyEnabled: config.giantJelly,
-    bossModeEnabled: config.bossMode,
-    bossActive: false,
-    bossJellies: [],
-    bossSpawnTimer: 0,
-    bossDefeated: 0,
-    giantJelly: null,
-    giantJellyAwarded: false,
-    running: true,
-    paused: false,
-    waitingForNextLevel: false,
-    winner: "",
-  };
+    state = {
+      playerChoice: selected,
+      players: [spongePlayer, patrickPlayer],
+      jellyfish: Array.from({ length: 7 }, spawnJellyfish),
+      bullets: [],
+      remaining: duration,
+      duration,
+      initialHp,
+      currentLevel: 1,
+      gameMode: "jellyfish",
+      opponentBonusEnabled: config.opponentBonus,
+      giantJellyEnabled: config.giantJelly,
+      bossModeEnabled: config.bossMode,
+      bossActive: false,
+      bossJellies: [],
+      bossSpawnTimer: 0,
+      bossDefeated: 0,
+      giantJelly: null,
+      giantJellyAwarded: false,
+      powerUp: powerUp,
+      running: true,
+      paused: false,
+      waitingForNextLevel: false,
+      winner: "",
+    };
 
-  startButton.textContent = "重新开始";
-  pauseButton.textContent = "⏸";
-  pauseButton.classList.remove("is-paused");
-  updateLevelHud();
-  statusText.textContent = `第 1 关 — ${LEVELS[0].desc}！${buildStartHint()}`;
-  startLoop();
-  sendNetworkMessage({ type: "start" });
-  sendSnapshot(true);
+    startButton.textContent = "重新开始";
+    pauseButton.textContent = "⏸";
+    pauseButton.classList.remove("is-paused");
+    updateLevelHud();
+    statusText.textContent = `第 1 关 — ${LEVELS[0].desc}！${buildStartHint()}`;
+    startLoop();
+    sendNetworkMessage({ type: "start" });
+    sendSnapshot(true);
+  });
 }
 
 function buildStartHint() {
@@ -300,12 +311,54 @@ function advanceToNextLevel() {
     return;
   }
 
-  if (nextConfig.freePlay) {
-    state.advancingToFreePlay = false;
+  var fpOpponentBonus = freeOpponentBonus.checked;
+  var fpGiantJelly = freeGiantJelly.checked;
+  var fpBossMode = freeBossMode.checked;
+
+  showPowerUpSelect(function (powerUp) {
+    if (nextConfig.freePlay) {
+      state.advancingToFreePlay = false;
+      state.currentLevel = nextLevel;
+      state.opponentBonusEnabled = fpOpponentBonus;
+      state.giantJellyEnabled = fpGiantJelly;
+      state.bossModeEnabled = fpBossMode;
+      state.powerUp = powerUp;
+      state.remaining = state.duration;
+      state.running = true;
+      state.paused = false;
+      state.gameMode = "jellyfish";
+      state.bossActive = false;
+      state.bossJellies = [];
+      state.bossSpawnTimer = 0;
+      state.giantJelly = null;
+      state.giantJellyAwarded = false;
+      state.bullets = [];
+      for (const player of state.players) {
+        player.hp = state.initialHp;
+        player.invincible = 0;
+        player.catchCooldown = 0;
+        player.catchBonusCooldown = 0;
+      }
+      updateLevelHud();
+      var descParts2 = [];
+      if (fpOpponentBonus) descParts2.push("对手加分");
+      if (fpGiantJelly) descParts2.push("巨大水母");
+      if (fpBossMode) descParts2.push("Boss");
+      var desc2 = descParts2.length > 0 ? descParts2.join("+") : "无额外机制";
+      levelIndicator.textContent = "可选";
+      levelDesc.textContent = desc2;
+      statusText.textContent = "第 6 关 — " + desc2 + "！" + buildStartHint();
+      sendNetworkMessage({ type: "start" });
+      sendSnapshot(true);
+      return;
+    }
+
     state.currentLevel = nextLevel;
-    state.opponentBonusEnabled = freeOpponentBonus.checked;
-    state.giantJellyEnabled = freeGiantJelly.checked;
-    state.bossModeEnabled = freeBossMode.checked;
+    const config = nextConfig;
+    state.opponentBonusEnabled = config.opponentBonus;
+    state.giantJellyEnabled = config.giantJelly;
+    state.bossModeEnabled = config.bossMode;
+    state.powerUp = powerUp;
     state.remaining = state.duration;
     state.running = true;
     state.paused = false;
@@ -323,40 +376,10 @@ function advanceToNextLevel() {
       player.catchBonusCooldown = 0;
     }
     updateLevelHud();
-    var descParts2 = [];
-    if (freeOpponentBonus.checked) descParts2.push("对手加分");
-    if (freeGiantJelly.checked) descParts2.push("巨大水母");
-    if (freeBossMode.checked) descParts2.push("Boss");
-    var desc2 = descParts2.length > 0 ? descParts2.join("+") : "无额外机制";
-    levelIndicator.textContent = "可选";
-    levelDesc.textContent = desc2;
-    statusText.textContent = "第 6 关 — " + desc2 + "！" + buildStartHint();
-    return;
-  }
-
-  state.currentLevel = nextLevel;
-  const config = nextConfig;
-  state.opponentBonusEnabled = config.opponentBonus;
-  state.giantJellyEnabled = config.giantJelly;
-  state.bossModeEnabled = config.bossMode;
-  state.remaining = state.duration;
-  state.running = true;
-  state.paused = false;
-  state.gameMode = "jellyfish";
-  state.bossActive = false;
-  state.bossJellies = [];
-  state.bossSpawnTimer = 0;
-  state.giantJelly = null;
-  state.giantJellyAwarded = false;
-  state.bullets = [];
-  for (const player of state.players) {
-    player.hp = state.initialHp;
-    player.invincible = 0;
-    player.catchCooldown = 0;
-    player.catchBonusCooldown = 0;
-  }
-  updateLevelHud();
-  statusText.textContent = `第 ${state.currentLevel} 关 — ${config.desc}！${buildStartHint()}`;
+    statusText.textContent = `第 ${state.currentLevel} 关 — ${config.desc}！${buildStartHint()}`;
+    sendNetworkMessage({ type: "start" });
+    sendSnapshot(true);
+  });
 }
 
 function handleHuman(player, dt) {
@@ -372,8 +395,9 @@ function handleHuman(player, dt) {
   if (touchMoves.has("down")) dy += 1;
 
   const length = Math.hypot(dx, dy) || 1;
-  player.vx = (dx / length) * 220;
-  player.vy = (dy / length) * 220;
+  var moveSpeed = hasPowerUp("doubleSpeed") ? 440 : 220;
+  player.vx = (dx / length) * moveSpeed;
+  player.vy = (dy / length) * moveSpeed;
 
   if ((keys.has(" ") || keys.has("Enter") || touchCatchHeld) && player.catchCooldown <= 0) {
     tryCatch(player);
@@ -393,8 +417,9 @@ function handleRemotePlayer(player, dt) {
   if (multiplayer.remoteInput.down) dy += 1;
 
   const length = Math.hypot(dx, dy) || 1;
-  player.vx = (dx / length) * 220;
-  player.vy = (dy / length) * 220;
+  var moveSpeed = hasPowerUp("doubleSpeed") ? 440 : 220;
+  player.vx = (dx / length) * moveSpeed;
+  player.vy = (dy / length) * moveSpeed;
 
   if (multiplayer.remoteInput.catch && player.catchCooldown <= 0) {
     tryCatch(player);
@@ -509,7 +534,8 @@ function tryCatch(player) {
 
   const index = state.jellyfish.findIndex((jelly) => distance(player, jelly) < catchRange + jelly.radius);
   if (index >= 0) {
-    player.score += 1;
+    var points = hasPowerUp("doubleScore") ? 2 : 1;
+    player.score += points;
     player.hp += 1;
     player.caughtFlash = 0.28;
     state.jellyfish.splice(index, 1, spawnJellyfish());
@@ -527,11 +553,12 @@ function tryCatchOpponentBonus(player, catchRange) {
   }
 
   if (distance(player, opponent) < catchRange + opponent.radius) {
-    player.score += 10;
+    var bonusPoints = hasPowerUp("doubleScore") ? 20 : 10;
+    player.score += bonusPoints;
     player.caughtFlash = 0.35;
     player.bonusFlash = 0.7;
     opponent.catchBonusCooldown = 1.05;
-    statusText.textContent = `${player.name}抓到${opponent.name}，获得 10 分`;
+    statusText.textContent = `${player.name}抓到${opponent.name}，获得 ${bonusPoints} 分`;
     return true;
   }
 
@@ -562,7 +589,8 @@ function hitGiantJelly(player, giant) {
   player.caughtFlash = 0.25;
 
   if (giant.hits >= giant.maxHits) {
-    player.score += giant.points;
+    var gp = hasPowerUp("doubleScore") ? giant.points * 2 : giant.points;
+    player.score += gp;
     player.bonusFlash = 1;
     giant.explodeFlash = 0.5;
     if (giant.boss) {
@@ -571,10 +599,54 @@ function hitGiantJelly(player, giant) {
       state.giantJellyAwarded = true;
     }
     var isEmp = giant.maxHits === 100;
-    statusText.textContent = player.name + (isEmp ? "打爆皇帝水母" : "打爆巨大水母") + "，获得 " + giant.points + " 分";
+    statusText.textContent = player.name + (isEmp ? "打爆皇帝水母" : "打爆巨大水母") + "，获得 " + gp + " 分";
   } else {
     var isEmp2 = giant.maxHits === 100;
     statusText.textContent = (isEmp2 ? "皇帝水母 " : "巨大水母 ") + giant.hits + "/" + giant.maxHits;
+  }
+}
+
+function updateMagnetEffect(dt) {
+  var magnetRange = 150;
+  for (var i = 0; i < state.players.length; i++) {
+    var player = state.players[i];
+    if (player.hp <= 0) continue;
+    for (var j = 0; j < state.jellyfish.length; j++) {
+      var jelly = state.jellyfish[j];
+      var d = distance(player, jelly);
+      if (d < magnetRange && d > 1) {
+        var pullStrength = (1 - d / magnetRange) * 120;
+        var dx = player.x - jelly.x;
+        var dy = player.y - jelly.y;
+        var len = Math.hypot(dx, dy);
+        jelly.x += (dx / len) * pullStrength * dt;
+        jelly.y += (dy / len) * pullStrength * dt;
+      }
+    }
+    if (state.giantJelly && state.giantJelly.explodeFlash <= 0) {
+      var gd = distance(player, state.giantJelly);
+      if (gd < magnetRange && gd > 1) {
+        var gPull = (1 - gd / magnetRange) * 60;
+        var gdx = player.x - state.giantJelly.x;
+        var gdy = player.y - state.giantJelly.y;
+        var glen = Math.hypot(gdx, gdy);
+        state.giantJelly.x += (gdx / glen) * gPull * dt;
+        state.giantJelly.y += (gdy / glen) * gPull * dt;
+      }
+    }
+    for (var k = 0; k < state.bossJellies.length; k++) {
+      var boss = state.bossJellies[k];
+      if (boss.explodeFlash > 0) continue;
+      var bd = distance(player, boss);
+      if (bd < magnetRange && bd > 1) {
+        var bPull = (1 - bd / magnetRange) * 60;
+        var bdx = player.x - boss.x;
+        var bdy = player.y - boss.y;
+        var blen = Math.hypot(bdx, bdy);
+        boss.x += (bdx / blen) * bPull * dt;
+        boss.y += (bdy / blen) * bPull * dt;
+      }
+    }
   }
 }
 
@@ -769,6 +841,8 @@ function update(dt) {
     updateSeaweedProtection(player, dt);
   }
 
+  if (hasPowerUp("magnet")) updateMagnetEffect(dt);
+
   updateJellyfish(dt);
   updateGiantJelly(dt);
   updateBullets(dt);
@@ -805,14 +879,19 @@ function updateHud() {
   patrickScore.textContent = patrick.score;
   spongeHp.textContent = `生命 ${sponge.hp}`;
   patrickHp.textContent = `生命 ${patrick.hp}`;
-  timerText.textContent = `${Math.ceil(state.remaining)} | 第${state.currentLevel}关`;
+  var puLabel = "";
+  if (state.powerUp === "all") puLabel = " 🧲✖️2⚡";
+  else if (hasPowerUp("magnet")) puLabel = " 🧲";
+  else if (hasPowerUp("doubleScore")) puLabel = " ✖️2";
+  else if (hasPowerUp("doubleSpeed")) puLabel = " ⚡";
+  timerText.textContent = `${Math.ceil(state.remaining)} | 第${state.currentLevel}关${puLabel}`;
   if (state.bossActive) {
-    timerText.textContent = `${Math.ceil(state.remaining)} | Boss ${state.bossJellies.length}`;
+    timerText.textContent = `${Math.ceil(state.remaining)} | Boss ${state.bossJellies.length}${puLabel}`;
     return;
   }
   if (state.giantJelly && state.giantJelly.explodeFlash <= 0) {
     var isEmp = state.giantJelly.maxHits === 100;
-    timerText.textContent = Math.ceil(state.remaining) + " | " + (isEmp ? "皇帝 " : "巨大 ") + state.giantJelly.hits + "/" + state.giantJelly.maxHits;
+    timerText.textContent = Math.ceil(state.remaining) + " | " + (isEmp ? "皇帝 " : "巨大 ") + state.giantJelly.hits + "/" + state.giantJelly.maxHits + puLabel;
   }
 }
 
@@ -1786,6 +1865,47 @@ function hideFreePlayConfig() {
   freeplayAdvanceControls.hidden = true;
 }
 
+function showPowerUpSelect(callback) {
+  selectedPowerUp = null;
+  pendingPowerUpCallback = callback;
+  document.querySelectorAll(".powerup-card").forEach(function (c) { c.classList.remove("selected"); });
+  confirmPowerUp.disabled = true;
+  confirmPowerUp.textContent = "选择增幅后开始";
+  powerUpOverlay.hidden = false;
+}
+
+function selectPowerUpCard(power) {
+  selectedPowerUp = power;
+  document.querySelectorAll(".powerup-card").forEach(function (c) {
+    c.classList.toggle("selected", c.dataset.power === power);
+  });
+  confirmPowerUp.disabled = false;
+  confirmPowerUp.textContent = "选择增幅后开始";
+}
+
+confirmPowerUp.addEventListener("click", function () {
+  if (!selectedPowerUp || !pendingPowerUpCallback) return;
+  powerUpOverlay.hidden = true;
+  var cb = pendingPowerUpCallback;
+  pendingPowerUpCallback = null;
+  cb(selectedPowerUp);
+});
+
+puMagnet.addEventListener("click", function () { selectPowerUpCard("magnet"); });
+puDoubleScore.addEventListener("click", function () { selectPowerUpCard("doubleScore"); });
+puDoubleSpeed.addEventListener("click", function () { selectPowerUpCard("doubleSpeed"); });
+
+watchAdButton.addEventListener("click", function () {
+  powerUpOverlay.hidden = true;
+  var cb = pendingPowerUpCallback;
+  pendingPowerUpCallback = null;
+  cb("all");
+});
+
+function hasPowerUp(type) {
+  return state && (state.powerUp === type || state.powerUp === "all");
+}
+
 function startFreePlay() {
   const config = {
     opponentBonus: freeOpponentBonus.checked,
@@ -1806,92 +1926,98 @@ function startFreePlay() {
 
   // Advancing from previous level — apply config to existing state
   if (state && state.advancingToFreePlay) {
-    state.advancingToFreePlay = false;
-    state.waitingForNextLevel = false;
-    completedLevels.add(5);
-    state.currentLevel = 6;
-    state.opponentBonusEnabled = config.opponentBonus;
-    state.giantJellyEnabled = config.giantJelly;
-    state.bossModeEnabled = config.bossMode;
-    state.remaining = state.duration;
-    state.running = true;
-    state.paused = false;
-    state.gameMode = "jellyfish";
-    state.bossActive = false;
-    state.bossJellies = [];
-    state.bossSpawnTimer = 0;
-    state.giantJelly = null;
-    state.giantJellyAwarded = false;
-    state.bullets = [];
-    for (var pi = 0; pi < state.players.length; pi++) {
-      state.players[pi].hp = state.initialHp;
-      state.players[pi].invincible = 0;
-      state.players[pi].catchCooldown = 0;
-      state.players[pi].catchBonusCooldown = 0;
+    showPowerUpSelect(function (powerUp) {
+      state.advancingToFreePlay = false;
+      state.waitingForNextLevel = false;
+      completedLevels.add(5);
+      state.currentLevel = 6;
+      state.opponentBonusEnabled = config.opponentBonus;
+      state.giantJellyEnabled = config.giantJelly;
+      state.bossModeEnabled = config.bossMode;
+      state.powerUp = powerUp;
+      state.remaining = state.duration;
+      state.running = true;
+      state.paused = false;
+      state.gameMode = "jellyfish";
+      state.bossActive = false;
+      state.bossJellies = [];
+      state.bossSpawnTimer = 0;
+      state.giantJelly = null;
+      state.giantJellyAwarded = false;
+      state.bullets = [];
+      for (var pi = 0; pi < state.players.length; pi++) {
+        state.players[pi].hp = state.initialHp;
+        state.players[pi].invincible = 0;
+        state.players[pi].catchCooldown = 0;
+        state.players[pi].catchBonusCooldown = 0;
+      }
+      pauseButton.textContent = "⏸";
+      pauseButton.classList.remove("is-paused");
+      levelIndicator.textContent = "可选";
+      levelDesc.textContent = desc;
+      statusText.textContent = `可选择关卡 — ${desc}！${buildStartHint()}`;
+      levelSelectOverlay.hidden = true;
+      hideFreePlayConfig();
+      startLoop();
+      sendNetworkMessage({ type: "start" });
+      sendSnapshot(true);
+    });
+    return;
+  }
+
+  // Fresh start from level select
+  showPowerUpSelect(function (powerUp) {
+    const selected = document.querySelector("input[name='player']:checked").value;
+    const duration = clamp(Number(durationInput.value) || 60, 20, 300);
+    const initialHp = clamp(Number(initialHpInput.value) || 10, 1, 99);
+    durationInput.value = duration;
+    initialHpInput.value = initialHp;
+
+    const spongePlayer = createPlayer(characters.spongebob, multiplayer.mode === "double" || selected === "spongebob", initialHp);
+    const patrickPlayer = createPlayer(characters.patrick, selected === "patrick" && multiplayer.mode !== "double", initialHp);
+    if (multiplayer.mode === "double") {
+      patrickPlayer.remoteControlled = true;
     }
+
+    state = {
+      playerChoice: selected,
+      players: [spongePlayer, patrickPlayer],
+      jellyfish: Array.from({ length: 7 }, spawnJellyfish),
+      bullets: [],
+      remaining: duration,
+      duration,
+      initialHp,
+      currentLevel: 6,
+      gameMode: "jellyfish",
+      opponentBonusEnabled: config.opponentBonus,
+      giantJellyEnabled: config.giantJelly,
+      bossModeEnabled: config.bossMode,
+      powerUp: powerUp,
+      bossActive: false,
+      bossJellies: [],
+      bossSpawnTimer: 0,
+      bossDefeated: 0,
+      giantJelly: null,
+      giantJellyAwarded: false,
+      running: true,
+      paused: false,
+      waitingForNextLevel: false,
+      winner: "",
+    };
+
+    startButton.textContent = "重新开始";
     pauseButton.textContent = "⏸";
     pauseButton.classList.remove("is-paused");
-    levelIndicator.textContent = "可选";
-    levelDesc.textContent = desc;
-    statusText.textContent = `可选择关卡 — ${desc}！${buildStartHint()}`;
+  updateLevelHud();
+  levelIndicator.textContent = "可选";
+  levelDesc.textContent = desc;
+  statusText.textContent = `可选择关卡 — ${desc}！${buildStartHint()}`;
     levelSelectOverlay.hidden = true;
     hideFreePlayConfig();
     startLoop();
     sendNetworkMessage({ type: "start" });
     sendSnapshot(true);
-    return;
-  }
-
-  // Fresh start from level select
-  const selected = document.querySelector("input[name='player']:checked").value;
-  const duration = clamp(Number(durationInput.value) || 60, 20, 300);
-  const initialHp = clamp(Number(initialHpInput.value) || 10, 1, 99);
-  durationInput.value = duration;
-  initialHpInput.value = initialHp;
-
-  const spongePlayer = createPlayer(characters.spongebob, multiplayer.mode === "double" || selected === "spongebob", initialHp);
-  const patrickPlayer = createPlayer(characters.patrick, selected === "patrick" && multiplayer.mode !== "double", initialHp);
-  if (multiplayer.mode === "double") {
-    patrickPlayer.remoteControlled = true;
-  }
-
-  state = {
-    playerChoice: selected,
-    players: [spongePlayer, patrickPlayer],
-    jellyfish: Array.from({ length: 7 }, spawnJellyfish),
-    bullets: [],
-    remaining: duration,
-    duration,
-    initialHp,
-    currentLevel: 6,
-    gameMode: "jellyfish",
-    opponentBonusEnabled: config.opponentBonus,
-    giantJellyEnabled: config.giantJelly,
-    bossModeEnabled: config.bossMode,
-    bossActive: false,
-    bossJellies: [],
-    bossSpawnTimer: 0,
-    bossDefeated: 0,
-    giantJelly: null,
-    giantJellyAwarded: false,
-    running: true,
-    paused: false,
-    waitingForNextLevel: false,
-    winner: "",
-  };
-
-  startButton.textContent = "重新开始";
-  pauseButton.textContent = "⏸";
-  pauseButton.classList.remove("is-paused");
-  updateLevelHud();
-  levelIndicator.textContent = "可选";
-  levelDesc.textContent = desc;
-  statusText.textContent = `可选择关卡 — ${desc}！${buildStartHint()}`;
-  levelSelectOverlay.hidden = true;
-  hideFreePlayConfig();
-  startLoop();
-  sendNetworkMessage({ type: "start" });
-  sendSnapshot(true);
+  });
 }
 
 function updateRedLight(dt) {
@@ -2171,46 +2297,49 @@ function startLevel(levelNum) {
   durationInput.value = duration;
   initialHpInput.value = initialHp;
 
-  const spongePlayer = createPlayer(characters.spongebob, multiplayer.mode === "double" || selected === "spongebob", initialHp);
-  const patrickPlayer = createPlayer(characters.patrick, selected === "patrick" && multiplayer.mode !== "double", initialHp);
-  if (multiplayer.mode === "double") {
-    patrickPlayer.remoteControlled = true;
-  }
+  showPowerUpSelect(function (powerUp) {
+    const spongePlayer = createPlayer(characters.spongebob, multiplayer.mode === "double" || selected === "spongebob", initialHp);
+    const patrickPlayer = createPlayer(characters.patrick, selected === "patrick" && multiplayer.mode !== "double", initialHp);
+    if (multiplayer.mode === "double") {
+      patrickPlayer.remoteControlled = true;
+    }
 
-  state = {
-    playerChoice: selected,
-    players: [spongePlayer, patrickPlayer],
-    jellyfish: Array.from({ length: 7 }, spawnJellyfish),
-    bullets: [],
-    remaining: duration,
-    duration,
-    initialHp,
-    currentLevel: levelNum,
-    gameMode: "jellyfish",
-    opponentBonusEnabled: config.opponentBonus,
-    giantJellyEnabled: config.giantJelly,
-    bossModeEnabled: config.bossMode,
-    bossActive: false,
-    bossJellies: [],
-    bossSpawnTimer: 0,
-    bossDefeated: 0,
-    giantJelly: null,
-    giantJellyAwarded: false,
-    running: true,
-    paused: false,
-    waitingForNextLevel: false,
-    winner: "",
-  };
+    state = {
+      playerChoice: selected,
+      players: [spongePlayer, patrickPlayer],
+      jellyfish: Array.from({ length: 7 }, spawnJellyfish),
+      bullets: [],
+      remaining: duration,
+      duration,
+      initialHp,
+      currentLevel: levelNum,
+      gameMode: "jellyfish",
+      opponentBonusEnabled: config.opponentBonus,
+      giantJellyEnabled: config.giantJelly,
+      bossModeEnabled: config.bossMode,
+      bossActive: false,
+      bossJellies: [],
+      bossSpawnTimer: 0,
+      bossDefeated: 0,
+      giantJelly: null,
+      giantJellyAwarded: false,
+      powerUp: powerUp,
+      running: true,
+      paused: false,
+      waitingForNextLevel: false,
+      winner: "",
+    };
 
-  startButton.textContent = "重新开始";
-  pauseButton.textContent = "⏸";
-  pauseButton.classList.remove("is-paused");
-  updateLevelHud();
-  statusText.textContent = `第 ${levelNum} 关 — ${config.desc}！${buildStartHint()}`;
-  levelSelectOverlay.hidden = true;
-  startLoop();
-  sendNetworkMessage({ type: "start" });
-  sendSnapshot(true);
+    startButton.textContent = "重新开始";
+    pauseButton.textContent = "⏸";
+    pauseButton.classList.remove("is-paused");
+    updateLevelHud();
+    statusText.textContent = `第 ${levelNum} 关 — ${config.desc}！${buildStartHint()}`;
+    levelSelectOverlay.hidden = true;
+    startLoop();
+    sendNetworkMessage({ type: "start" });
+    sendSnapshot(true);
+  });
 }
 
 function togglePause() {
