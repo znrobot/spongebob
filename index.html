@@ -17,7 +17,10 @@
             <p class="eyebrow">Bikini Bottom Jelly Hunt</p>
             <h1>海绵宝宝和派大星抓水母</h1>
           </div>
-          <button id="startButton" class="primary-button" type="button">开始游戏</button>
+          <div class="topbar-buttons">
+            <button id="rulesButton" class="secondary-button" type="button">游戏规则</button>
+            <button id="startButton" class="primary-button" type="button">开始游戏</button>
+          </div>
         </header>
 
         <div class="controls" aria-label="游戏设置">
@@ -120,6 +123,26 @@
         </div>
       </section>
     </main>
+
+    <div id="rulesOverlay" class="overlay" hidden>
+      <div class="overlay-card">
+        <h2>游戏规则</h2>
+        <ul>
+          <li><strong>移动：</strong>方向键 / WASD / 触屏虚拟十字键</li>
+          <li><strong>抓捕：</strong>空格 / Enter / 点击画布 / 触屏抓按钮</li>
+          <li><strong>抓水母：</strong>靠近水母按抓 → <em>+1 分 +1 生命</em></li>
+          <li><strong>水母子弹：</strong>水母会定期射子弹，命中扣血（有短暂无敌保护）</li>
+          <li><strong>海藻保护区：</strong>画面底部海藻 → 进入后 <em>5 秒无敌</em></li>
+          <li><strong>对手抓捕（可选）：</strong>抓到对方角色 <em>+10 分</em></li>
+          <li><strong>巨大水母（可选）：</strong>最后 10 秒出现，连续接触 10 下 <em>+100 分</em></li>
+          <li><strong>Boss 关卡（可选）：</strong>打爆巨大水母后进入 2 分钟 Boss 关，大量巨型水母</li>
+          <li><strong>单人模式：</strong>未选角色由 AI 自动控制</li>
+          <li><strong>双人联机：</strong>一台设备创建房间 / 随机配对，另一台加入 → 双方准备后开局</li>
+          <li><strong>胜负：</strong>时间耗尽或双方生命归零，得分高者获胜；同分平局</li>
+        </ul>
+        <button id="closeRulesButton" class="primary-button" type="button">知道了</button>
+      </div>
+    </div>
 
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <script src="game.js"></script>

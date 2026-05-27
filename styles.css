@@ -57,6 +57,13 @@ body {
   margin-bottom: 14px;
 }
 
+.topbar-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: rgba(18, 49, 63, 0.66);
@@ -496,4 +503,53 @@ canvas {
     opacity: 0.88;
     pointer-events: auto;
   }
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(18, 49, 63, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+.overlay-card {
+  width: min(460px, 88vw);
+  max-height: 86vh;
+  padding: 26px 24px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 20px 60px rgba(18, 49, 63, 0.38);
+  overflow-y: auto;
+}
+
+.overlay-card h2 {
+  margin: 0 0 6px;
+  font-size: 1.5rem;
+}
+
+.overlay-card ul {
+  margin: 0;
+  padding: 0 0 0 1.2em;
+  color: var(--ink);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.overlay-card li {
+  margin-bottom: 1px;
+}
+
+.overlay-card .primary-button {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
 }

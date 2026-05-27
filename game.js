@@ -1535,5 +1535,16 @@ initialHpInput.addEventListener("input", () => {
   }
 });
 
+const rulesOverlay = document.getElementById("rulesOverlay");
+document.getElementById("rulesButton").addEventListener("click", () => {
+  rulesOverlay.hidden = false;
+});
+document.getElementById("closeRulesButton").addEventListener("click", () => {
+  rulesOverlay.hidden = true;
+});
+rulesOverlay.addEventListener("click", (e) => {
+  if (e.target === rulesOverlay) rulesOverlay.hidden = true;
+});
+
 updateMultiplayerUi();
 draw();
